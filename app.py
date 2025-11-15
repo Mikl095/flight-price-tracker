@@ -7,7 +7,7 @@ from datetime import datetime
 API_KEY = st.secrets["RAPIDAPI_KEY"]  # clé RapidAPI
 
 st.set_page_config(page_title="Flight Price Tracker", layout="wide")
-st.title("📉 Tracker de prix de vols Kiwi.com via RapidAPI")
+st.title("📉 Tracker de prix de vols - Kiwi.com Cheap Flights (RapidAPI)")
 
 # Inputs utilisateur
 origin = st.text_input("Aéroport de départ (IATA)", "CDG")
@@ -31,38 +31,42 @@ if st.button("Chercher les prix"):
         date_to_api = date_to
 
     for dest in destinations:
-        url = "https://kiwi-com.p.rapidapi.com/v2/search"
+
+        # 👇 URL de l'API "Kiwi.com Cheap Flights"
+        url = "https://kiwi-com-cheap-flights.p.rapidapi.com/flight"
 
         headers = {
             "X-RapidAPI-Key": API_KEY,
-            "X-RapidAPI-Host": "kiwi-com.p.rapidapi.com"
+            "X-RapidAPI-Host": "kiwi-com-cheap-flights.p.rapidapi.com"
         }
 
+        # 👇 Paramètres acceptés par cette API
         params = {
             "fly_from": origin,
             "fly_to": dest,
             "date_from": date_from_api,
-            "date_to": date_to_api,
-            "curr": "EUR",
-            "limit": 10
+            "date_to": date_to_api
         }
 
-        st.write(f"Paramètres envoyés à l'API pour {dest} :", params)
+        st.write(f"🔵 Paramètres envoyés à l'API pour {dest} :", params)
 
         try:
             r = requests.get(url, headers=headers, params=params, timeout=30)
             data = r.json()
-            st.write(f"Réponse brute de l'API pour {dest} :", data)
+            st.write(f"🟣 Réponse API pour {dest} :", data)
 
-            if "data" in data and len(data["data"]) > 0:
+            # Cette API renvoie un format différent de l'API Tequila
+            if isinstance(data, dict) and "data" in data and len(data["data"]) > 0:
                 prices = [{"price": f["price"], "departure": f["local_departure"]} for f in data["data"]]
                 df = pd.DataFrame(prices)
                 df["departure"] = pd.to_datetime(df["departure"])
+
                 st.subheader(f"{origin} → {dest}")
                 st.line_chart(df.set_index("departure")["price"])
                 st.write(df)
+
             else:
-                st.warning(f"Aucun vol trouvé pour {dest}")
+                st.warning(f"⚠ Aucun vol trouvé pour {dest}")
 
         except Exception as e:
             st.error(f"Erreur pour {dest} : {e}")
