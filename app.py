@@ -15,7 +15,7 @@ st.title("📉 Tracker gratuit de prix de vols - Aller Simple")
 origin_input = st.text_input("Départ (ville ou IATA)", "Paris")
 destinations_input = st.text_input(
     "Destinations (villes ou IATA séparés par des virgules)", 
-    "Tokyo,Osaka,Guadeloupe"
+    "Tokyo,Osaka,Guadeloupe,Londres"
 )
 
 # Date par défaut = aujourd'hui + 3 mois
@@ -29,16 +29,19 @@ destinations = [d.strip() for d in destinations_input.split(",") if d.strip()]
 city_to_skyid = {
     # Paris
     "Paris": ["sky:CDG", "sky:ORY"],
-    
+
     # Japon
-    "Tokyo": ["sky:NRT", "sky:HND"],
-    "Osaka": ["sky:KIX", "sky:ITM"],
-    "Sapporo": ["sky:CTS"],
-    "Fukuoka": ["sky:FUK"],
-    "Nagoya": ["sky:NGO"],
-    
+    "Tokyo": ["sky:NRT", "sky:HND"],        # Narita, Haneda
+    "Osaka": ["sky:KIX", "sky:ITM"],       # Kansai, Itami
+    "Sapporo": ["sky:CTS"],                 # Chitose
+    "Fukuoka": ["sky:FUK"],                 # Fukuoka
+    "Nagoya": ["sky:NGO"],                  # Chubu Centrair
+
     # Guadeloupe
-    "Guadeloupe": ["sky:PTP"]
+    "Guadeloupe": ["sky:PTP"],              # Pointe-à-Pitre
+
+    # Londres
+    "Londres": ["sky:LHR", "sky:LGW", "sky:STN", "sky:LTN", "sky:LCY", "sky:SEN"]  # Heathrow, Gatwick, Stansted, Luton, City, Southend
 }
 
 # ---------------- FONCTION POUR FAIRE UNE REQUETE ----------------
