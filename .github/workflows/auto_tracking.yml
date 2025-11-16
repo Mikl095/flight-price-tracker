@@ -22,7 +22,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Run flight tracker
-        run: python scripts/auto_tracking.py
         
+- name: Run flight tracker
+  run: |
+    export PYTHONPATH="${PYTHONPATH}:${GITHUB_WORKSPACE}"
+    python scripts/auto_tracking.py
+    
