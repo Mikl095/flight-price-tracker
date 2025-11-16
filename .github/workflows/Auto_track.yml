@@ -25,4 +25,4 @@ jobs:
 
     - name: Run auto tracking
       run: |
-        python auto_track.py
+        python Auto_track.py
