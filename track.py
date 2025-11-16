@@ -1,37 +1,45 @@
-from utils import load_routes, save_routes
-from datetime import datetime
+import json
 import random
+from datetime import datetime
+from email_utils import send_email
+
+DATA_FILE = "data.json"
+
+def load_routes():
+    try:
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
+
+def save_routes(routes):
+    with open(DATA_FILE, "w") as f:
+        json.dump(routes, f, indent=4)
+
+def simulate_tracking(route):
+    price = random.randint(200, 800)
+    entry = {
+        "date": str(datetime.now()),
+        "price": price
+    }
+    route["history"].append(entry)
+    route["last_tracked"] = str(datetime.now())
+    return price
 
 routes = load_routes()
 
-def simulate_auto_tracking(route):
-    now = datetime.now()
-    route.setdefault("history", [])
+for route in routes:
+    price = simulate_tracking(route)
 
-    last = datetime.fromisoformat(route["last_tracked"]) if route.get("last_tracked") else None
-    interval = 24 / max(route.get("tracking_per_day", 1), 1)
-
-    updates_needed = 1
-    if last:
-        hours_passed = (now - last).total_seconds() / 3600
-        updates_needed = int(hours_passed // interval)
-
-    for _ in range(updates_needed):
-        price = random.randint(200, 900)
-
-        route["history"].append({
-            "date": str(now),
-            "price": price
-        })
-        route["last_tracked"] = str(now)
-
-        if route.get("notifications_enabled") and price <= route["target_price"]:
-            print(f"🔥 DEAL {route['origin']} → {route['destination']}: {price} € (sous {route['target_price']}€)")
-
-
-for r in routes:
-    simulate_auto_tracking(r)
+    # Notification
+    if price <= route["target_price"]:
+        send_email(
+            subject=f"🔥 Prix bas : {route['origin']} → {route['destination']}",
+            text=(
+                f"Prix actuel : {price}€\n"
+                f"Seuil : {route['target_price']}€\n"
+                f"Départ : {route['departure']}"
+            )
+        )
 
 save_routes(routes)
-
-print("Tracking OK à", datetime.now())
