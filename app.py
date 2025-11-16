@@ -1,85 +1,120 @@
 import streamlit as st
 from datetime import date, datetime
-from utils.storage import ensure_data_file, load_routes, save_routes
-from utils.tracking import simulate_auto_tracking
-from utils.plotting import plot_price_history
+from utils import ensure_data_file, load_routes, save_routes, plot_price_history
+import random
+
+# Initialisation
+ensure_data_file()
+routes = load_routes()
 
 st.set_page_config(page_title="Flight Price Tracker", layout="wide")
 st.title("✈️ Flight Price Tracker – Paris → Destinations personnalisables")
 
-ensure_data_file()
-routes = load_routes()
+st.write("Ajoutez des vols, activez ou non les notifications, et laissez GitHub Actions tracker automatiquement vos prix.")
 
-st.write(
-    "Suivez vos vols depuis Paris, saisissez n'importe quelle destination (code IATA) "
-    "ou utilisez les suggestions : Tokyo (TYO), Osaka (OSA), Sapporo (SPK), Guadeloupe (PTP)."
-)
 
-# Sidebar - Ajouter un vol
+# -------------------------------------------------------
+# Sidebar : Ajouter un vol
+# -------------------------------------------------------
 st.sidebar.header("➕ Ajouter un vol")
+
 origin = st.sidebar.text_input("Origine", "PAR")
-dest_options = ["TYO", "OSA", "SPK", "PTP", "Autre…"]
-destination = st.sidebar.selectbox("Destination (sélection ou saisie libre)", dest_options)
+
+dest_default = ["TYO", "OSA", "SPK", "PTP", "Autre…"]
+destination = st.sidebar.selectbox("Destination", dest_default)
+
 if destination == "Autre…":
-    destination = st.sidebar.text_input("Code IATA de votre destination", value="")
+    destination = st.sidebar.text_input("Code IATA", "")
 
 departure_date = st.sidebar.date_input("Départ", date.today())
 return_date = st.sidebar.date_input("Retour", date.today())
 
-target_price = st.sidebar.number_input("Seuil d’alerte (€)", min_value=50, value=350)
-tracking_per_day = st.sidebar.number_input("Nombre de trackings par jour", min_value=1, max_value=24, value=1)
+target_price = st.sidebar.number_input("Seuil d’alerte (€)", value=350)
+tracking_per_day = st.sidebar.number_input("Trackings par jour", value=2, min_value=1, max_value=24)
 
-if st.sidebar.button("Ajouter ce suivi"):
+notifications_enabled = st.sidebar.checkbox("Notifications activées", value=True)
+
+if st.sidebar.button("Ajouter"):
     if not destination:
-        st.sidebar.error("Veuillez entrer un code IATA pour la destination.")
+        st.sidebar.error("Veuillez entrer un code IATA.")
     else:
-        new_entry = {
+        new_route = {
             "origin": origin,
             "destination": destination.upper(),
             "departure": str(departure_date),
             "return": str(return_date),
             "target_price": target_price,
             "tracking_per_day": tracking_per_day,
+            "notifications_enabled": notifications_enabled,
             "last_tracked": None,
             "history": []
         }
-        routes.append(new_entry)
+        routes.append(new_route)
         save_routes(routes)
-        st.sidebar.success(f"Trajet ajouté : {origin} → {destination.upper()} ✔️")
+        st.sidebar.success(f"Vol ajouté : {origin} → {destination.upper()}")
 
-# Mise à jour automatique des vols
+
+# -------------------------------------------------------
+# Simulation de tracking
+# -------------------------------------------------------
+def simulate_auto_tracking(route):
+    now = datetime.now()
+    route.setdefault("history", [])
+
+    last = datetime.fromisoformat(route["last_tracked"]) if route.get("last_tracked") else None
+    interval = 24 / max(route.get("tracking_per_day", 1), 1)
+
+    updates_needed = 1
+    if last:
+        hours_passed = (now - last).total_seconds() / 3600
+        updates_needed = int(hours_passed // interval)
+
+    for _ in range(updates_needed):
+        price = random.randint(200, 900)
+
+        route["history"].append({
+            "date": str(now),
+            "price": price
+        })
+
+        route["last_tracked"] = str(now)
+
+
+# Auto tracking
 for route in routes:
     simulate_auto_tracking(route)
 save_routes(routes)
 
-# Section principale : vols suivis
-st.header("📊 Vos vols surveillés")
+
+# -------------------------------------------------------
+# Liste des vols
+# -------------------------------------------------------
+st.header("📊 Vos vols suivis")
 
 if not routes:
-    st.info("Aucun vol surveillé. Ajoutez un vol dans la barre latérale.")
+    st.info("Ajoutez un vol dans la barre latérale.")
 else:
     for idx, route in enumerate(routes):
-        st.subheader(f"✈️ {route['origin']} → {route['destination']}")
+        st.subheader(f"{route['origin']} → {route['destination']}")
+
         st.write(
-            f"**Dates :** {route['departure']} → {route['return']} • "
-            f"**Seuil :** {route['target_price']}€ • "
-            f"**Tracking/jour :** {route.get('tracking_per_day', 1)}"
+            f"📅 {route['departure']} → {route['return']} • "
+            f"🎯 Seuil {route['target_price']}€ • "
+            f"⏱ Track/jour : {route['tracking_per_day']} • "
+            f"🔔 Notifs : {route['notifications_enabled']}"
         )
 
-        if st.button(f"Mettre à jour le prix maintenant", key=f"update-{idx}"):
-            simulate_auto_tracking(route)
-            save_routes(routes)
-            st.write(f"🎟️ Prix actuel : {route['history'][-1]['price']}€")
-            if route['history'][-1]['price'] <= route['target_price']:
-                st.success(f"🔥 Prix sous votre seuil ({route['target_price']}€) !")
-
         if route["history"]:
-            fig = plot_price_history(route["history"])
-            st.pyplot(fig)
+            latest = route["history"][-1]["price"]
+            st.write(f"💶 Dernier prix : **{latest} €**")
 
-        if st.button(f"Supprimer ce suivi", key=f"delete-{idx}"):
+            if latest <= route["target_price"] and route["notifications_enabled"]:
+                st.success("🔥 Prix sous le seuil !")
+
+        fig = plot_price_history(route["history"])
+        st.pyplot(fig)
+
+        if st.button(f"Supprimer", key=f"del{idx}"):
             routes.pop(idx)
             save_routes(routes)
-            st.warning("Vol supprimé ❌")
             st.experimental_rerun()
-    
