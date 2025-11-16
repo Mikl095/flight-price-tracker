@@ -57,7 +57,12 @@ if st.sidebar.button("Ajouter ce suivi"):
 def simulate_auto_tracking(route):
     """Simule le tracking automatique selon tracking_per_day."""
     now = datetime.now()
-    last = datetime.fromisoformat(route['last_tracked']) if route['last_tracked'] else None
+
+    # Sécurité : créer les clés manquantes
+    last_tracked_str = route.get('last_tracked')
+    route.setdefault('history', [])
+
+    last = datetime.fromisoformat(last_tracked_str) if last_tracked_str else None
     interval = 24 / max(route.get('tracking_per_day', 1), 1)  # heures
 
     # Combien de fois le tracking aurait dû se produire depuis last_tracked ?
@@ -69,7 +74,8 @@ def simulate_auto_tracking(route):
         updates_needed = 1  # première fois
 
     for _ in range(updates_needed):
-        price = random.randint(200, 800)  # prix aléatoire pour test
+        # Simulation : prix aléatoire pour test
+        price = random.randint(200, 800)
         route['history'].append({
             "date": str(now),
             "price": price
@@ -116,4 +122,4 @@ else:
             save_routes(routes)
             st.warning("Vol supprimé ❌")
             st.experimental_rerun()
-    
+            
