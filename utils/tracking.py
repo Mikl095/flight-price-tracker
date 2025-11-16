@@ -1,43 +1,27 @@
-import random
 from datetime import datetime
-from utils.storage import load_routes, save_routes
-from utils.scheduler import tracking_needed
-from utils.emailer import send_email_alert
+import random
 
-# -------------------------------------------------------------------
-# Simulation locale (utilisée par le bouton "Mettre à jour maintenant")
-# -------------------------------------------------------------------
-def simulate_price_tracking(route):
-    price = random.randint(200, 800)
-    now = datetime.now().isoformat()
+def simulate_auto_tracking(route):
+    now = datetime.now()
 
-    route["history"].append({"date": now, "price": price})
-    route["last_tracked"] = now
+    last_tracked_str = route.get('last_tracked')
+    route.setdefault('history', [])
 
-# -------------------------------------------------------------------
-# Tracking utilisé par GitHub Actions
-# -------------------------------------------------------------------
-def auto_track_all_routes():
-    routes = load_routes()
-    updated = False
+    last = datetime.fromisoformat(last_tracked_str) if last_tracked_str else None
+    interval = 24 / max(route.get('tracking_per_day', 1), 1)  # heures
 
-    for route in routes:
-        if tracking_needed(route):
-            price = random.randint(200, 800)  # ← Remplace ici par appel API
+    updates_needed = 0
+    if last:
+        hours_passed = (now - last).total_seconds() / 3600
+        updates_needed = int(hours_passed // interval)
+    else:
+        updates_needed = 1
 
-            now = datetime.now().isoformat()
-            route["history"].append({"date": now, "price": price})
-            route["last_tracked"] = now
-
-            # Notification mail
-            if route["notify"] and price <= route["target_price"]:
-                send_email_alert(route, price)
-
-            updated = True
-
-    if updated:
-        save_routes(routes)
-
-if __name__ == "__main__":
-    auto_track_all_routes()
-          
+    for _ in range(updates_needed):
+        price = random.randint(200, 800)  # simulation prix
+        route['history'].append({
+            "date": str(now),
+            "price": price
+        })
+        route['last_tracked'] = str(now)
+        
