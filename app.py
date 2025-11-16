@@ -1,28 +1,41 @@
 import streamlit as st
 from datetime import date
 
+from utils import ensure_data_file, load_routes, save_routes, plot_price_history
 from amadeus_client import search_flights
-from utils import load_routes, save_routes, plot_price_history
 
-st.title("✈️ Flight Price Tracker – Paris ➜ Japon & Guadeloupe")
+# --- Assurer que le fichier de données existe ---
+ensure_data_file()
 
+# --- Charger les routes suivies ---
 routes = load_routes()
 
-# --- Sidebar : Ajout d’un nouveau suivi ---
-st.sidebar.header("Ajouter un vol à surveiller")
+st.title("✈️ Flight Price Tracker – Paris → Japon & Guadeloupe")
+
+st.write(
+    "Suivi automatique des prix des vols depuis Paris vers : "
+    "**Tokyo, Osaka, Sapporo et la Guadeloupe.**\n"
+    "Ajoutez un trajet pour commencer."
+)
+
+# -------------------------------------------------------------------
+# Sidebar : ajout d'un nouveau suivi
+# -------------------------------------------------------------------
+
+st.sidebar.header("➕ Ajouter un vol à surveiller")
 
 origin = st.sidebar.text_input("Origine", "PAR")
 
 destination = st.sidebar.selectbox(
     "Destination",
     ["TYO", "OSA", "SPK", "PTP"],
-    help="Tokyo / Osaka / Sapporo / Guadeloupe"
+    help="Tokyo (TYO), Osaka (OSA), Sapporo (SPK), Guadeloupe (PTP)"
 )
 
 departure_date = st.sidebar.date_input("Départ", date.today())
 return_date = st.sidebar.date_input("Retour", date.today())
 
-target_price = st.sidebar.number_input("Seuil d’alerte (€)", 300)
+target_price = st.sidebar.number_input("Seuil d’alerte (€)", min_value=50, value=350)
 
 if st.sidebar.button("Ajouter ce suivi"):
     new_entry = {
@@ -35,43 +48,66 @@ if st.sidebar.button("Ajouter ce suivi"):
     }
     routes.append(new_entry)
     save_routes(routes)
-    st.sidebar.success("Ajouté ✔️")
+    st.sidebar.success("Trajet ajouté ✔️")
 
-# --- Affichage des trajets suivis ---
-st.subheader("Vos vols surveillés")
+# -------------------------------------------------------------------
+# Affichage des routes existantes
+# -------------------------------------------------------------------
+
+st.header("📊 Vos vols surveillés")
 
 if not routes:
-    st.info("Aucun vol surveillé pour le moment.")
+    st.info("Aucun vol surveillé pour l'instant. Ajoutez un vol dans le menu à gauche.")
 else:
-    for route in routes:
-        st.markdown(f"### ✈️ {route['origin']} → {route['destination']}")
+    for idx, route in enumerate(routes):
 
+        st.subheader(f"✈️ {route['origin']} → {route['destination']}")
+
+        st.write(
+            f"**Dates :** {route['departure']} → {route['return']} • "
+            f"**Seuil d’alerte :** {route['target_price']}€"
+        )
+
+        # ---- Récupération du prix actuel ----
         flights = search_flights(
-            route["origin"],
-            route["destination"],
-            route["departure"],
-            route["return"]
+            origin=route["origin"],
+            destination=route["destination"],
+            departure_date=route["departure"],
+            return_date=route["return"]
         )
 
         if "error" in flights:
-            st.error(flights["error"])
+            st.error("Erreur API Amadeus : " + flights["error"])
             continue
 
-        price = float(flights[0]["price"]["total"])
-        st.write(f"Prix actuel : **{price}€**")
+        try:
+            price = float(flights[0]["price"]["total"])
+        except:
+            st.error("Impossible de lire le prix du vol.")
+            continue
 
-        # Sauvegarde historique
+        st.write(f"🎟️ **Prix actuel : {price}€**")
+
+        # ---- Historique ----
         route["history"].append({
             "date": str(date.today()),
             "price": price
         })
         save_routes(routes)
 
-        # Graphique
+        # ---- Graphique ----
         if len(route["history"]) > 1:
             fig = plot_price_history(route["history"])
             st.pyplot(fig)
 
-        # Alerte
+        # ---- Alerte ----
         if price <= route["target_price"]:
             st.success(f"🔥 Prix sous votre seuil ({route['target_price']}€) !")
+
+        # ---- Bouton supprimer ----
+        if st.button(f"Supprimer ce suivi", key=f"delete-{idx}"):
+            routes.pop(idx)
+            save_routes(routes)
+            st.warning("Vol supprimé ❌")
+            st.experimental_rerun()
+        
