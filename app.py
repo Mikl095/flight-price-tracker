@@ -10,12 +10,13 @@ ensure_data_file()
 # --- Charger les routes suivies ---
 routes = load_routes()
 
-st.title("✈️ Flight Price Tracker – Paris → Japon & Guadeloupe")
+st.title("✈️ Flight Price Tracker – Paris → Destinations personnalisables")
 
 st.write(
-    "Suivi automatique des prix des vols depuis Paris vers : "
-    "**Tokyo, Osaka, Sapporo et la Guadeloupe.**\n"
-    "Ajoutez un trajet pour commencer."
+    "Suivi automatique des prix des vols depuis Paris. "
+    "Vous pouvez ajouter n'importe quelle destination en code IATA, "
+    "ou choisir parmi les suggestions : Tokyo (TYO), Osaka (OSA), "
+    "Sapporo (SPK) et Guadeloupe (PTP)."
 )
 
 # -------------------------------------------------------------------
@@ -26,11 +27,12 @@ st.sidebar.header("➕ Ajouter un vol à surveiller")
 
 origin = st.sidebar.text_input("Origine", "PAR")
 
-destination = st.sidebar.selectbox(
-    "Destination",
-    ["TYO", "OSA", "SPK", "PTP"],
-    help="Tokyo (TYO), Osaka (OSA), Sapporo (SPK), Guadeloupe (PTP)"
-)
+# Destination personnalisable avec suggestions
+dest_options = ["TYO", "OSA", "SPK", "PTP", "Autre…"]
+destination = st.sidebar.selectbox("Destination (sélection ou saisie libre)", dest_options)
+
+if destination == "Autre…":
+    destination = st.sidebar.text_input("Code IATA de votre destination", value="")
 
 departure_date = st.sidebar.date_input("Départ", date.today())
 return_date = st.sidebar.date_input("Retour", date.today())
@@ -38,17 +40,20 @@ return_date = st.sidebar.date_input("Retour", date.today())
 target_price = st.sidebar.number_input("Seuil d’alerte (€)", min_value=50, value=350)
 
 if st.sidebar.button("Ajouter ce suivi"):
-    new_entry = {
-        "origin": origin,
-        "destination": destination,
-        "departure": str(departure_date),
-        "return": str(return_date),
-        "target_price": target_price,
-        "history": []
-    }
-    routes.append(new_entry)
-    save_routes(routes)
-    st.sidebar.success("Trajet ajouté ✔️")
+    if not destination:
+        st.sidebar.error("Veuillez entrer un code IATA pour la destination.")
+    else:
+        new_entry = {
+            "origin": origin,
+            "destination": destination.upper(),
+            "departure": str(departure_date),
+            "return": str(return_date),
+            "target_price": target_price,
+            "history": []
+        }
+        routes.append(new_entry)
+        save_routes(routes)
+        st.sidebar.success(f"Trajet ajouté : {origin} → {destination.upper()} ✔️")
 
 # -------------------------------------------------------------------
 # Affichage des routes existantes
@@ -110,4 +115,3 @@ else:
             save_routes(routes)
             st.warning("Vol supprimé ❌")
             st.experimental_rerun()
-        
