@@ -3,7 +3,7 @@ from datetime import datetime
 import random
 import os
 
-ROUTE_FILE = "routes.json"
+ROUTE_FILE = "data/tracked_routes.json"
 
 # Vérifier si le fichier existe
 if not os.path.exists(ROUTE_FILE):
