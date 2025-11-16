@@ -3,7 +3,7 @@ import os
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-DATA_FILE = "data/tracked_routes.json"
+DATA_FILE = "Data/tracked_routes.json"
 
 
 # ------------------------------------------
