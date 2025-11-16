@@ -39,6 +39,7 @@ def simulate_auto_tracking(route):
         updates_needed = 1
 
     for _ in range(updates_needed):
+        # Remplace par ton appel API réel si besoin
         price = random.randint(200, 800)
         route["history"].append({"date": str(now), "price": price})
         route["last_tracked"] = str(now)
@@ -52,4 +53,4 @@ with open(ROUTE_FILE, "w") as f:
     json.dump(routes, f, indent=4)
 
 print("✅ Routes mises à jour avec succès !")
-                   
+    
