@@ -10,7 +10,7 @@ st.set_page_config(page_title="Flight Price Tracker", layout="wide")
 st.title("📉 Tracker de prix de vols - Kiwi.com Cheap Flights (RapidAPI)")
 
 # Inputs utilisateur
-origin = st.text_input("Aéroport de départ (IATA)", "CDG")
+origin = st.text_input("Aéroport de départ (IATA)", "PAR")  # PAR = tous les aéroports Paris
 destinations_input = st.text_input("Destinations (IATA séparés par des virgules)", "NRT,HND,KIX")
 date_from = st.text_input("Date départ (YYYY-MM-DD)", datetime.now().strftime("%Y-%m-%d"))
 date_to = st.text_input("Date retour (YYYY-MM-DD)", (datetime.now().replace(year=datetime.now().year+1)).strftime("%Y-%m-%d"))
@@ -33,19 +33,21 @@ if st.button("Chercher les prix"):
     for dest in destinations:
 
         # 👇 URL de l'API "Kiwi.com Cheap Flights"
-        url = "https://kiwi-com-cheap-flights.p.rapidapi.com/flight"
+        url = "https://kiwi-com-cheap-flights.p.rapidapi.com/round-trip"
 
         headers = {
             "X-RapidAPI-Key": API_KEY,
             "X-RapidAPI-Host": "kiwi-com-cheap-flights.p.rapidapi.com"
         }
 
-        # 👇 Paramètres acceptés par cette API
+        # 👇 Paramètres acceptés par api /round-trip
         params = {
             "fly_from": origin,
             "fly_to": dest,
             "date_from": date_from_api,
-            "date_to": date_to_api
+            "date_to": date_to_api,
+            "currency": "EUR",
+            "limit": 10
         }
 
         st.write(f"🔵 Paramètres envoyés à l'API pour {dest} :", params)
@@ -55,11 +57,19 @@ if st.button("Chercher les prix"):
             data = r.json()
             st.write(f"🟣 Réponse API pour {dest} :", data)
 
-            # Cette API renvoie un format différent de l'API Tequila
+            # Vérification du format
             if isinstance(data, dict) and "data" in data and len(data["data"]) > 0:
-                prices = [{"price": f["price"], "departure": f["local_departure"]} for f in data["data"]]
+                flights = data["data"]
+
+                prices = []
+                for f in flights:
+                    prices.append({
+                        "price": f.get("price"),
+                        "departure": f.get("departure"),
+                    })
+
                 df = pd.DataFrame(prices)
-                df["departure"] = pd.to_datetime(df["departure"])
+                df["departure"] = pd.to_datetime(df["departure"], errors="coerce")
 
                 st.subheader(f"{origin} → {dest}")
                 st.line_chart(df.set_index("departure")["price"])
