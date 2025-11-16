@@ -24,5 +24,5 @@ jobs:
         pip install -r requirements.txt
 
     - name: Run auto tracking
-      run: |
-        python Track/Auto_track.py
+      run: python flight-price-tracker/auto_track.py
+      
