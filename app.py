@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
+from dateutil.relativedelta import relativedelta  # pip install python-dateutil
 
 # ---------------- CONFIG ----------------
 API_KEY = st.secrets["RAPIDAPI_KEY"]
@@ -16,9 +17,12 @@ destinations_input = st.text_input(
     "Destinations (villes ou IATA séparés par des virgules)", 
     "Tokyo,Osaka,Guadeloupe"
 )
-date_from = st.text_input("Date départ (YYYY-MM-DD)", datetime.now().strftime("%Y-%m-%d"))
-adults = st.number_input("Nombre de passagers", min_value=1, value=1)
 
+# Date par défaut = aujourd'hui + 3 mois
+default_departure = (datetime.now() + relativedelta(months=3)).strftime("%Y-%m-%d")
+date_from = st.text_input("Date départ (YYYY-MM-DD)", default_departure)
+
+adults = st.number_input("Nombre de passagers", min_value=1, value=1)
 destinations = [d.strip() for d in destinations_input.split(",") if d.strip()]
 
 # ---------------- DICTIONNAIRE VILLE / IATA -> SkyId ----------------
