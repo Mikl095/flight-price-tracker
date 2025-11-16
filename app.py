@@ -1,9 +1,7 @@
 import streamlit as st
 from datetime import date, datetime
 from utils import ensure_data_file, load_routes, save_routes, plot_price_history
-from apscheduler.schedulers.background import BackgroundScheduler
 import random
-import time
 
 # --- Initialisation ---
 ensure_data_file()
@@ -54,26 +52,34 @@ if st.sidebar.button("Ajouter ce suivi"):
         st.sidebar.success(f"Trajet ajouté : {origin} → {destination.upper()} ✔️")
 
 # -------------------------------------------------------------------
-# Fonction de tracking automatique
+# Fonction de tracking automatique “cloud friendly”
 # -------------------------------------------------------------------
-def track_price(route):
-    """Simule la récupération d'un prix et met à jour l'historique."""
-    price = random.randint(200, 800)  # prix aléatoire pour test
-    route["history"].append({
-        "date": str(datetime.now()),
-        "price": price
-    })
-    route["last_tracked"] = str(datetime.now())
-    save_routes(routes)
-    return price
+def simulate_auto_tracking(route):
+    """Simule le tracking automatique selon tracking_per_day."""
+    now = datetime.now()
+    last = datetime.fromisoformat(route['last_tracked']) if route['last_tracked'] else None
+    interval = 24 / max(route.get('tracking_per_day', 1), 1)  # heures
 
-scheduler = BackgroundScheduler()
-scheduler.start()
+    # Combien de fois le tracking aurait dû se produire depuis last_tracked ?
+    updates_needed = 0
+    if last:
+        hours_passed = (now - last).total_seconds() / 3600
+        updates_needed = int(hours_passed // interval)
+    else:
+        updates_needed = 1  # première fois
 
-# Programmer les mises à jour automatiques selon le nombre de trackings par jour
-for idx, route in enumerate(routes):
-    interval_hours = 24 / max(route.get("tracking_per_day", 1), 1)
-    scheduler.add_job(track_price, 'interval', hours=interval_hours, args=[route])
+    for _ in range(updates_needed):
+        price = random.randint(200, 800)  # prix aléatoire pour test
+        route['history'].append({
+            "date": str(now),
+            "price": price
+        })
+        route['last_tracked'] = str(now)
+
+# --- Mettre à jour tous les vols automatiquement ---
+for route in routes:
+    simulate_auto_tracking(route)
+save_routes(routes)
 
 # -------------------------------------------------------------------
 # Section principale : vols suivis
@@ -93,9 +99,10 @@ else:
 
         # Bouton pour update manuel
         if st.button(f"Mettre à jour le prix maintenant", key=f"update-{idx}"):
-            price = track_price(route)
-            st.write(f"🎟️ Prix actuel : {price}€")
-            if price <= route['target_price']:
+            simulate_auto_tracking(route)
+            save_routes(routes)
+            st.write(f"🎟️ Prix actuel : {route['history'][-1]['price']}€")
+            if route['history'][-1]['price'] <= route['target_price']:
                 st.success(f"🔥 Prix sous votre seuil ({route['target_price']}€) !")
 
         # Graphique historique
@@ -109,3 +116,4 @@ else:
             save_routes(routes)
             st.warning("Vol supprimé ❌")
             st.experimental_rerun()
+    
