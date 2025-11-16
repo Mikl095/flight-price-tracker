@@ -1,3 +1,6 @@
 streamlit
+amadeus
+python-dotenv
 pandas
+matplotlib
 requests
