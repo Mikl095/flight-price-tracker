@@ -3,34 +3,37 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-# ---------- CONFIG ----------
+# ----------------- CONFIG -----------------
 API_KEY = st.secrets["RAPIDAPI_KEY"]
 HOST = "flights-scraper-real-time.p.rapidapi.com"
 
-st.set_page_config(page_title="Flight Price Tracker - Debug", layout="wide")
-st.title("📉 Tracker vols - Flights Scraper Real-Time (Diagnostic)")
+st.set_page_config(page_title="Flight Price Tracker - Flights Scraper", layout="wide")
+st.title("📉 Tracker de prix de vols - Flights Scraper Real-Time")
 
-# ----- Inputs utilisateur -----
+# ----------------- INPUT UTILISATEUR -----------------
 origin = st.text_input("Départ (IATA)", "PAR")
 destinations_input = st.text_input("Destinations (IATA séparés par des virgules)", "NRT,HND,KIX")
 date_from = st.text_input("Date départ (YYYY-MM-DD)", datetime.now().strftime("%Y-%m-%d"))
 date_to = st.text_input("Date retour (YYYY-MM-DD)", (datetime.now().replace(year=datetime.now().year+1)).strftime("%Y-%m-%d"))
+adults = st.number_input("Nombre de passagers", min_value=1, value=1)
 
+# Nettoyage destinations
 destinations = [d.strip().upper() for d in destinations_input.split(",") if d.strip()]
 
+# ----------------- BOUTON -----------------
 if st.button("Chercher vols"):
 
     for dest in destinations:
         st.header(f"🔹 {origin} → {dest}")
 
-        # --- Test Aller simple ---
-        st.subheader("✈️ Test Aller Simple")
-        url_simple = f"https://{HOST}/search"  # Vérifie le endpoint exact
-        params_simple = {
+        # ----------------- PARAMETRES -----------------
+        url = f"https://{HOST}/flights/search-return"
+        params = {
             "origin": origin,
             "destination": dest,
-            "date_from": date_from,
-            "adults": 1,
+            "departureDate": date_from,
+            "returnDate": date_to,
+            "adults": adults,
             "currency": "EUR"
         }
         headers = {
@@ -38,49 +41,32 @@ if st.button("Chercher vols"):
             "X-RapidAPI-Host": HOST
         }
 
+        # ----------------- REQUETE -----------------
         try:
-            r = requests.get(url_simple, headers=headers, params=params_simple, timeout=30)
-            data_simple = r.json()
-            st.subheader("Réponse brute (Aller simple)")
-            st.json(data_simple)
+            r = requests.get(url, headers=headers, params=params, timeout=30)
+            data = r.json()
 
-            if "flights" in data_simple and data_simple["flights"]:
-                df_simple = pd.DataFrame(data_simple["flights"])
-                df_simple["departure"] = pd.to_datetime(df_simple["departure"], errors="coerce")
-                st.line_chart(df_simple.set_index("departure")["price"])
-                st.write(df_simple)
+            st.subheader("Réponse brute de l'API")
+            st.json(data)
+
+            # ----------------- VERIFICATION -----------------
+            if "flights" in data and len(data["flights"]) > 0:
+                flights = data["flights"]
+                df = pd.DataFrame(flights)
+                
+                # Conversion des dates en datetime si existant
+                if "departure" in df.columns:
+                    df["departure"] = pd.to_datetime(df["departure"], errors="coerce")
+                if "return" in df.columns:
+                    df["return"] = pd.to_datetime(df["return"], errors="coerce")
+                
+                st.subheader("Graphique des prix")
+                if "departure" in df.columns and "price" in df.columns:
+                    st.line_chart(df.set_index("departure")["price"])
+                st.write(df)
+
             else:
-                st.warning("Aucun vol aller simple trouvé.")
+                st.warning("⚠ Aucun vol trouvé pour cette destination ou problème de paramètres.")
 
         except Exception as e:
-            st.error(f"Erreur Aller Simple : {e}")
-
-        # --- Test Aller-Retour (si supporté) ---
-        st.subheader("🔄 Test Aller-Retour (round-trip)")
-        url_round = f"https://{HOST}/round-trip"  # Vérifie que ce endpoint existe
-        params_round = {
-            "origin": origin,
-            "destination": dest,
-            "departureDate": date_from,
-            "returnDate": date_to,
-            "adults": 1,
-            "currency": "EUR"
-        }
-
-        try:
-            r = requests.get(url_round, headers=headers, params=params_round, timeout=30)
-            data_round = r.json()
-            st.subheader("Réponse brute (Aller-Retour)")
-            st.json(data_round)
-
-            if "flights" in data_round and data_round["flights"]:
-                df_round = pd.DataFrame(data_round["flights"])
-                df_round["departure"] = pd.to_datetime(df_round["departure"], errors="coerce")
-                df_round["return"] = pd.to_datetime(df_round.get("return", None), errors="coerce")
-                st.line_chart(df_round.set_index("departure")["price"])
-                st.write(df_round)
-            else:
-                st.warning("Aucun vol round-trip trouvé ou endpoint non supporté.")
-
-        except Exception as e:
-            st.error(f"Erreur Round-Trip : {e}")
+            st.error(f"Erreur pour {dest} : {e}")
