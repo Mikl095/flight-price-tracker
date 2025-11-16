@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environment files
+.env
+*.env
+
+# Local data
+data/*.json
+
+# OS
+.DS_Store
+Thumbs.db
