@@ -1,7 +1,9 @@
 import streamlit as st
 from datetime import date, datetime
 from utils import ensure_data_file, load_routes, save_routes, plot_price_history
-from amadeus_client import search_flights
+from apscheduler.schedulers.background import BackgroundScheduler
+import random
+import time
 
 # --- Initialisation ---
 ensure_data_file()
@@ -22,7 +24,6 @@ st.sidebar.header("➕ Ajouter un vol")
 
 origin = st.sidebar.text_input("Origine", "PAR")
 
-# Destination personnalisable
 dest_options = ["TYO", "OSA", "SPK", "PTP", "Autre…"]
 destination = st.sidebar.selectbox("Destination (sélection ou saisie libre)", dest_options)
 if destination == "Autre…":
@@ -32,8 +33,6 @@ departure_date = st.sidebar.date_input("Départ", date.today())
 return_date = st.sidebar.date_input("Retour", date.today())
 
 target_price = st.sidebar.number_input("Seuil d’alerte (€)", min_value=50, value=350)
-
-# Fréquence de tracking (nombre de checks par jour)
 tracking_per_day = st.sidebar.number_input("Nombre de trackings par jour", min_value=1, max_value=24, value=1)
 
 if st.sidebar.button("Ajouter ce suivi"):
@@ -55,6 +54,28 @@ if st.sidebar.button("Ajouter ce suivi"):
         st.sidebar.success(f"Trajet ajouté : {origin} → {destination.upper()} ✔️")
 
 # -------------------------------------------------------------------
+# Fonction de tracking automatique
+# -------------------------------------------------------------------
+def track_price(route):
+    """Simule la récupération d'un prix et met à jour l'historique."""
+    price = random.randint(200, 800)  # prix aléatoire pour test
+    route["history"].append({
+        "date": str(datetime.now()),
+        "price": price
+    })
+    route["last_tracked"] = str(datetime.now())
+    save_routes(routes)
+    return price
+
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+# Programmer les mises à jour automatiques selon le nombre de trackings par jour
+for idx, route in enumerate(routes):
+    interval_hours = 24 / max(route.get("tracking_per_day", 1), 1)
+    scheduler.add_job(track_price, 'interval', hours=interval_hours, args=[route])
+
+# -------------------------------------------------------------------
 # Section principale : vols suivis
 # -------------------------------------------------------------------
 st.header("📊 Vos vols surveillés")
@@ -72,44 +93,12 @@ else:
 
         # Bouton pour update manuel
         if st.button(f"Mettre à jour le prix maintenant", key=f"update-{idx}"):
-
-            flights = search_flights(
-                origin=route["origin"],
-                destination=route["destination"],
-                departure_date=route["departure"],
-                return_date=route["return"]
-            )
-
-            if "error" in flights:
-                st.error("Erreur API Amadeus : " + flights["error"])
-                continue
-
-            try:
-                price = float(flights[0]["price"]["total"])
-            except:
-                st.error("Impossible de lire le prix du vol.")
-                continue
-
-            # Historique
-            route["history"].append({
-                "date": str(datetime.now()),
-                "price": price
-            })
-            route["last_tracked"] = str(datetime.now())
-            save_routes(routes)
-
+            price = track_price(route)
             st.write(f"🎟️ Prix actuel : {price}€")
-
-            # Graphique
-            if len(route["history"]) > 1:
-                fig = plot_price_history(route["history"])
-                st.pyplot(fig)
-
-            # Alerte seuil
-            if price <= route["target_price"]:
+            if price <= route['target_price']:
                 st.success(f"🔥 Prix sous votre seuil ({route['target_price']}€) !")
 
-        # Graphique historique même sans update
+        # Graphique historique
         if route["history"]:
             fig = plot_price_history(route["history"])
             st.pyplot(fig)
