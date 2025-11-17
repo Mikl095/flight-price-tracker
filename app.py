@@ -26,7 +26,7 @@ if st.sidebar.button("Sauvegarder paramètres"):
     cfg = {"email": email.strip(), "enabled": bool(enable_notifications_global)}
     save_email_config(cfg)
     st.sidebar.success("Paramètres sauvegardés (email, notifications).")
-    st.experimental_rerun()
+    st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.write("SendGrid: pour que GitHub Actions puisse envoyer des emails automatiquement, ajoute une secret `SENDGRID_KEY` dans ton repo.")
@@ -60,7 +60,7 @@ if st.sidebar.button("Ajouter ce vol"):
     routes.append(new)
     save_routes(routes)
     st.sidebar.success("Vol ajouté ✔")
-    st.experimental_rerun()
+    st.rerun()
 
 # ---------------- Main Dashboard ----------------
 st.header("📊 Dashboard")
@@ -119,7 +119,7 @@ else:
             if st.button("Toggle notif", key=f"toggle_{i}"):
                 r["notifications"] = not r.get("notifications", False)
                 save_routes(routes)
-                st.experimental_rerun()
+                st.rerun()
         with cols[2]:
             if st.button("Supprimer", key=f"del_{i}"):
                 routes.pop(i)
@@ -127,7 +127,7 @@ else:
                 st.experimental_rerun()
         with cols[3]:
             if st.button("Rafraîchir graphe", key=f"graph_{i}"):
-                st.experimental_rerun()
+                st.rerun()
 
         if r.get("history"):
             fig = plot_price_history(r["history"])
