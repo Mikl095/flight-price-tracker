@@ -1,120 +1,134 @@
 import streamlit as st
-
-import os
-print("utils.py existe ?", os.path.isfile("utils.py"))
-
 from datetime import date, datetime
-from utils.storage import ensure_data_file, load_routes, save_routes
+from utils.storage import ensure_data_file, load_routes, save_routes, load_email_config, save_email_config
 from utils.plotting import plot_price_history
-
-# --- Initialisation ---  
-ensure_data_file()
-routes = load_routes()
-
-st.set_page_config(page_title="Flight Price Tracker", layout="wide")
-st.title("✈️ Flight Price Tracker – Paris → Destinations personnalisables")
-
-# -------------------------------------------------------------------
-# Sidebar : ajouter un vol
-# -------------------------------------------------------------------
-st.sidebar.header("➕ Ajouter un vol")
-
-origin = st.sidebar.text_input("Origine", "PAR")
-
-dest_options = ["TYO", "OSA", "SPK", "PTP", "LON", "Autre…"]
-destination = st.sidebar.selectbox("Destination", dest_options)
-
-if destination == "Autre…":
-    destination = st.sidebar.text_input("Code IATA", value="")
-
-departure_date = st.sidebar.date_input("Départ", date.today())
-return_date = st.sidebar.date_input("Retour", date.today())
-
-target_price = st.sidebar.number_input("Seuil d’alerte (€)", min_value=50, value=350)
-tracking_per_day = st.sidebar.number_input("Trackings par jour", min_value=1, max_value=24, value=1)
-notifications = st.sidebar.checkbox("Activer les notifications email", value=False)
-
-# Ajouter un vol
-if st.sidebar.button("Ajouter ce suivi"):
-    if not destination:
-        st.sidebar.error("Veuillez entrer un code IATA.")
-    else:
-        new_entry = {
-            "origin": origin,
-            "destination": destination.upper(),
-            "departure": str(departure_date),
-            "return": str(return_date),
-            "target_price": target_price,
-            "tracking_per_day": tracking_per_day,
-            "notifications": notifications,
-            "last_tracked": None,
-            "history": []
-        }
-        routes.append(new_entry)
-        save_routes(routes)
-        st.sidebar.success(f"Ajouté : {origin} → {destination.upper()}")
-        st.rerun()
-
-# -------------------------------------------------------------------
-# Simulation tracking auto (en attendant Amadeus)
-# -------------------------------------------------------------------
+from utils.dashboard import create_flight_table
+from exporters import export_csv, export_pdf
+from sendgrid_client import sendgrid_send
+import os
 import random
 
-def simulate_price(route):
-    """Simule des prix aléatoires pour les tests."""
-    now = datetime.now()
-    price = random.randint(200, 900)
+# init
+ensure_data_file()
+routes = load_routes()
+email_cfg = load_email_config()
 
-    route["history"].append({
-        "date": now.isoformat(),
-        "price": price
-    })
-    route["last_tracked"] = now.isoformat()
+st.set_page_config(page_title="Flight Price Tracker", layout="wide")
+st.title("✈️ Flight Price Tracker — Dashboard & Notifications")
 
-# -------------------------------------------------------------------
-# Section principale
-# -------------------------------------------------------------------
-st.header("📊 Vos vols surveillés")
+# ---------------- Sidebar: global settings ----------------
+st.sidebar.header("⚙️ Configuration globale")
+email = st.sidebar.text_input("Email de réception des alertes", value=email_cfg.get("email",""))
+enable_notifications_global = st.sidebar.checkbox("Activer notifications globales", value=email_cfg.get("enabled", False))
+sendgrid_key_field = st.sidebar.text_input("Clé SendGrid (optionnel local)", type="password", value=os.environ.get("SENDGRID_KEY",""))
+
+if st.sidebar.button("Sauvegarder paramètres"):
+    cfg = {"email": email.strip(), "enabled": bool(enable_notifications_global)}
+    save_email_config(cfg)
+    st.sidebar.success("Paramètres sauvegardés (email, notifications).")
+    st.experimental_rerun()
+
+st.sidebar.markdown("---")
+st.sidebar.write("SendGrid: pour que GitHub Actions puisse envoyer des emails automatiquement, ajoute une secret `SENDGRID_KEY` dans ton repo.")
+
+# ---------------- Sidebar: add route ----------------
+st.sidebar.header("➕ Ajouter un suivi")
+origin = st.sidebar.text_input("Origine (IATA)", "PAR")
+destination = st.sidebar.text_input("Destination (IATA)", "TYO")
+departure_date = st.sidebar.date_input("Date départ", date.today())
+return_date = st.sidebar.date_input("Date retour", date.today())
+target_price = st.sidebar.number_input("Seuil alerte (€)", min_value=10, value=450)
+tracking_per_day = st.sidebar.number_input("Trackings par jour", min_value=1, max_value=24, value=2)
+notifications_on = st.sidebar.checkbox("Activer notifications pour ce vol", value=True)
+min_bags = st.sidebar.number_input("Min. bagages (préférence)", min_value=0, max_value=5, value=0)
+max_stops = st.sidebar.selectbox("Max escales (préférence)", ["any", 0, 1, 2])
+
+if st.sidebar.button("Ajouter ce vol"):
+    new = {
+        "origin": origin.upper(),
+        "destination": destination.upper(),
+        "departure": str(departure_date),
+        "return": str(return_date),
+        "target_price": float(target_price),
+        "tracking_per_day": int(tracking_per_day),
+        "notifications": bool(notifications_on),
+        "min_bags": int(min_bags),
+        "max_stops": max_stops,
+        "history": [],
+        "last_tracked": None
+    }
+    routes.append(new)
+    save_routes(routes)
+    st.sidebar.success("Vol ajouté ✔")
+    st.experimental_rerun()
+
+# ---------------- Main Dashboard ----------------
+st.header("📊 Dashboard")
 
 if not routes:
-    st.info("Aucun vol surveillé.")
+    st.info("Aucun suivi pour l'instant — ajoute un vol dans la barre latérale.")
 else:
-    for idx, r in enumerate(routes):
-        st.subheader(f"✈️ {r['origin']} → {r['destination']}")
+    import pandas as pd
+    df = create_flight_table(routes)
+    st.dataframe(df, use_container_width=True)
 
-        st.write(
-            f"**Dates :** {r['departure']} → {r['return']} • "
-            f"**Seuil :** {r['target_price']}€ • "
-            f"**Tracking/jour :** {r['tracking_per_day']} • "
-            f"**Notifications :** {'ON 🔔' if r.get('notifications') else 'OFF'}"
-        )
-
-        # --- Mettre à jour manuellement ---
-        if st.button("Mettre à jour maintenant", key=f"update-{idx}"):
-            simulate_price(r)
+    # Controls
+    col1, col2, col3 = st.columns([1,1,1])
+    with col1:
+        if st.button("Exporter CSV"):
+            path = export_csv(routes)
+            st.success(f"CSV exporté: {path}")
+            st.download_button("Télécharger CSV", path, file_name=path)
+    with col2:
+        if st.button("Exporter PDF"):
+            path = export_pdf(routes)
+            st.success(f"PDF exporté: {path}")
+            st.download_button("Télécharger PDF", path, file_name=path)
+    with col3:
+        if st.button("Mettre à jour tous les prix (simu)"):
+            # simple simulate update once per route
+            for r in routes:
+                price = random.randint(200,900)
+                r.setdefault("history", []).append({"date": datetime.now().isoformat(), "price": price})
+                r["last_tracked"] = datetime.now().isoformat()
+                # local quick notification
+                if r.get("notifications") and email_cfg.get("enabled") and email_cfg.get("email"):
+                    if r.get("target_price") and price <= r.get("target_price"):
+                        # try send a quick email with local key if provided
+                        local_key = sendgrid_key_field or os.environ.get("SENDGRID_KEY")
+                        if local_key:
+                            os.environ["SENDGRID_KEY"] = local_key
+                            sendgrid_send(email_cfg.get("email"), f"[ALERTE] {r['origin']}→{r['destination']}: {price}€",
+                                          f"Prix: {price}€\nSeuil: {r['target_price']}€")
             save_routes(routes)
+            st.success("Mise à jour effectuée.")
 
-            last = r["history"][-1]["price"]
-            st.info(f"Prix actuel : {last} €")
+    # Per-route UI
+    for i, r in enumerate(routes):
+        st.markdown("---")
+        st.subheader(f"{r['origin']} → {r['destination']}")
+        cols = st.columns([1,1,1,1])
+        with cols[0]:
+            if st.button("Mettre à jour", key=f"update_{i}"):
+                price = random.randint(200,900)
+                r.setdefault("history", []).append({"date": datetime.now().isoformat(), "price": price})
+                r["last_tracked"] = datetime.now().isoformat()
+                save_routes(routes)
+                st.experimental_rerun()
+        with cols[1]:
+            if st.button("Toggle notif", key=f"toggle_{i}"):
+                r["notifications"] = not r.get("notifications", False)
+                save_routes(routes)
+                st.experimental_rerun()
+        with cols[2]:
+            if st.button("Supprimer", key=f"del_{i}"):
+                routes.pop(i)
+                save_routes(routes)
+                st.experimental_rerun()
+        with cols[3]:
+            if st.button("Rafraîchir graphe", key=f"graph_{i}"):
+                st.experimental_rerun()
 
-            if last <= r["target_price"]:
-                st.success("🔥 Sous votre seuil !")
-
-            st.rerun()
-
-        # --- Affichage du graphique ---
-        if r["history"]:
+        if r.get("history"):
             fig = plot_price_history(r["history"])
             st.pyplot(fig)
-
-        # --- Toggle notifications ---
-        if st.button("Activer/Désactiver notifications", key=f"notif-{idx}"):
-            r["notifications"] = not r["notifications"]
-            save_routes(routes)
-            st.rerun()
-
-        # --- Supprimer ---
-        if st.button("Supprimer ce suivi", key=f"del-{idx}"):
-            routes.pop(idx)
-            save_routes(routes)
-            st.rerun()
