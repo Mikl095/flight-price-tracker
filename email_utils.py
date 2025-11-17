@@ -2,23 +2,18 @@ import os
 import requests
 
 SENDGRID_API_KEY = os.environ["SENDGRID_API_KEY"]
-SENDGRID_FROM = os.environ["SENDGRID_FROM"]
-SENDGRID_TO = os.environ["SENDGRID_TO"]
 
-def send_email(subject, text):
+def send_email(to_email, subject, message):
     url = "https://api.sendgrid.com/v3/mail/send"
 
     data = {
         "personalizations": [
-            {
-                "to": [{"email": SENDGRID_TO}],
-                "subject": subject
-            }
+            {"to": [{"email": to_email}], "subject": subject}
         ],
-        "from": {"email": SENDGRID_FROM},
+        "from": {"email": "alert@flight-tracker.com"},
         "content": [
-            {"type": "text/plain", "value": text}
-        ]
+            {"type": "text/plain", "value": message}
+        ],
     }
 
     headers = {
@@ -26,5 +21,5 @@ def send_email(subject, text):
         "Content-Type": "application/json"
     }
 
-    response = requests.post(url, json=data, headers=headers)
-    return response.status_code, response.text
+    r = requests.post(url, json=data, headers=headers)
+    return r.status_code
