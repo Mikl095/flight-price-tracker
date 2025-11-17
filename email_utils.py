@@ -1,45 +1,57 @@
 import os
 import requests
 
-SENDGRID_API_KEY = os.getenv("SENDGRID_KEY")
 
-def send_email(to, subject, html):
+# --------------------------------------------------------------
+#  Envoi d'un email via SendGrid
+# --------------------------------------------------------------
+
+def send_email(to: str, subject: str, html: str, reply_to: str = None) -> bool:
     """
-    Envoie un email via SendGrid API.
-    Retourne True si OK / False si échec.
+    Envoie un email via SendGrid.
+    Retourne True si envoyé avec succès, False sinon.
     """
 
-    if not SENDGRID_API_KEY:
-        print("❌ ERREUR : aucune clé SENDGRID_KEY détectée dans les secrets.")
+    sg_key = os.getenv("SENDGRID_KEY")
+
+    if not sg_key:
+        print("❌ ERREUR : SENDGRID_KEY est absente des secrets Streamlit / GitHub.")
         return False
 
-    url = "https://api.sendgrid.com/v3/mail/send"
+    # Adresse expéditeur (obligatoirement Single Sender vérifié)
+    from_email = "zendugan95@gmail.com"
+
+    if reply_to is None:
+        reply_to = from_email
+
+    data = {
+        "personalizations": [{
+            "to": [{"email": to}],
+            "subject": subject,
+        }],
+        "from": {
+            "email": from_email,
+            "name": "Flight Price Tracker"
+        },
+        "reply_to": {"email": reply_to},
+        "content": [{
+            "type": "text/html",
+            "value": html
+        }]
+    }
 
     headers = {
-        "Authorization": f"Bearer {SENDGRID_API_KEY}",
+        "Authorization": f"Bearer {sg_key}",
         "Content-Type": "application/json"
     }
 
-    data = {
-        "personalizations": [
-            {
-                "to": [{"email": to}],
-                "subject": subject
-            }
-        ],
-        "from": {"email": "no-reply@flighttracker.app"},  # valid custom sender
-        "content": [
-            {
-                "type": "text/html",
-                "value": html
-            }
-        ]
-    }
+    response = requests.post(
+        "https://api.sendgrid.com/v3/mail/send",
+        json=data,
+        headers=headers
+    )
 
-    response = requests.post(url, headers=headers, json=data)
+    # Log d'état utile pour debug
+    print("SendGrid response:", response.status_code, response.text)
 
-    if response.status_code in [200, 202]:
-        return True
-    else:
-        print("❌ SendGrid error:", response.status_code, response.text)
-        return False
+    return response.status_code in [200, 201, 202]
