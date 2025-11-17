@@ -4,3 +4,4 @@ sendgrid
 matplotlib
 pandas
 reportlab
+python-dateutil
