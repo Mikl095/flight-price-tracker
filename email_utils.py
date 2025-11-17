@@ -1,57 +1,34 @@
 import os
-import requests
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 
-# --------------------------------------------------------------
-#  Envoi d'un email via SendGrid
-# --------------------------------------------------------------
+def send_email(to: str, subject: str, html: str) -> bool:
+    """Envoie un email via SendGrid et affiche le code de réponse."""
 
-def send_email(to: str, subject: str, html: str, reply_to: str = None) -> bool:
-    """
-    Envoie un email via SendGrid.
-    Retourne True si envoyé avec succès, False sinon.
-    """
+    SENDGRID_KEY = os.getenv("SENDGRID_KEY")
 
-    sg_key = os.getenv("SENDGRID_KEY")
-
-    if not sg_key:
-        print("❌ ERREUR : SENDGRID_KEY est absente des secrets Streamlit / GitHub.")
+    if not SENDGRID_KEY:
+        print("❌ SENDGRID_KEY manquante (variable d’environnement absente).")
         return False
 
-    # Adresse expéditeur (obligatoirement Single Sender vérifié)
-    from_email = "zendugan95@gmail.com"
-
-    if reply_to is None:
-        reply_to = from_email
-
-    data = {
-        "personalizations": [{
-            "to": [{"email": to}],
-            "subject": subject,
-        }],
-        "from": {
-            "email": from_email,
-            "name": "Flight Price Tracker"
-        },
-        "reply_to": {"email": reply_to},
-        "content": [{
-            "type": "text/html",
-            "value": html
-        }]
-    }
-
-    headers = {
-        "Authorization": f"Bearer {sg_key}",
-        "Content-Type": "application/json"
-    }
-
-    response = requests.post(
-        "https://api.sendgrid.com/v3/mail/send",
-        json=data,
-        headers=headers
+    message = Mail(
+        from_email="zendugan95@gmail.com",   # Ton expéditeur validé
+        to_emails=to,
+        subject=subject,
+        html_content=html
     )
 
-    # Log d'état utile pour debug
-    print("SendGrid response:", response.status_code, response.text)
-    
-    return response.status_code in [200, 201, 202]
+    try:
+        sg = SendGridAPIClient(SENDGRID_KEY)
+        response = sg.send(message)
+
+        print("📨 SendGrid response code:", response.status_code)
+        print("📨 SendGrid response body:", response.body)
+        print("📨 SendGrid headers:", response.headers)
+
+        return response.status_code in (200, 202)
+
+    except Exception as e:
+        print("❌ Erreur SendGrid:", str(e))
+        return False
