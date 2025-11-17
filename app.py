@@ -36,13 +36,16 @@ st.sidebar.header("➕ Ajouter un suivi")
 origin = st.sidebar.text_input("Origine (IATA)", "PAR")
 destination = st.sidebar.text_input("Destination (IATA)", "TYO")
 departure_date = st.sidebar.date_input("Date départ (approx.)", date.today() + timedelta(days=90))
+
 departure_flex_days = st.sidebar.number_input("Plage départ ± jours", min_value=0, max_value=30, value=1)
 return_airport = st.sidebar.text_input("Aéroport retour (IATA) - vide = même", "")
 stay_min = st.sidebar.number_input("Séjour min (jours)", min_value=1, max_value=365, value=6)
 stay_max = st.sidebar.number_input("Séjour max (jours)", min_value=1, max_value=365, value=10)
 return_flex_days = st.sidebar.number_input("Plage retour ± jours", min_value=0, max_value=30, value=1)
 
-target_price = st.sidebar.number_input("Seuil alerte (€)", min_value=1, value=450)
+# CORRECTION float-safe
+target_price = st.sidebar.number_input("Seuil alerte (€)", min_value=1.0, value=450.0, step=1.0)
+
 tracking_per_day = st.sidebar.number_input("Trackings par jour", min_value=1, max_value=24, value=2)
 notifications_on = st.sidebar.checkbox("Activer notifications pour ce vol", value=True)
 min_bags = st.sidebar.number_input("Min bagages (préférence)", min_value=0, max_value=5, value=0)
@@ -181,8 +184,14 @@ else:
                 return_airport_e = st.text_input("Aéroport retour (laisser vide = même)", value=r.get("return_airport") or "")
                 stay_min_e = st.number_input("Séjour min (jours)", min_value=1, max_value=365, value=int(r.get("stay_min",1)))
                 stay_max_e = st.number_input("Séjour max (jours)", min_value=1, max_value=365, value=int(r.get("stay_max",1)))
+
                 return_flex_e = st.number_input("Plage retour ± jours", min_value=0, max_value=30, value=int(r.get("return_flex_days",0)))
-                target_e = st.number_input("Seuil alerte (€)", min_value=1, value=float(r.get("target_price", 450)))
+
+                # CORRECTION float-safe
+                target_e = st.number_input("Seuil alerte (€)", min_value=1.0,
+                                           value=float(r.get("target_price", 450.0)),
+                                           step=1.0)
+
                 trackpd_e = st.number_input("Trackings/jour", min_value=1, max_value=24, value=int(r.get("tracking_per_day",1)))
                 notif_e = st.checkbox("Activer notifications", value=bool(r.get("notifications", False)))
                 min_bags_e = st.number_input("Min bagages", min_value=0, max_value=5, value=int(r.get("min_bags",0)))
@@ -191,6 +200,7 @@ else:
                 avoid_e = st.text_input("Compagnies à éviter (IATA, séparées par ,)", value=",".join(r.get("avoid_airlines", [])))
                 preferred_e = st.text_input("Compagnies préférées (IATA, séparées par ,)", value=",".join(r.get("preferred_airlines", [])))
                 email_e = st.text_input("Email pour ce suivi (vide = global)", value=r.get("email",""))
+
                 submit = st.form_submit_button("Enregistrer modifications")
 
             if submit:
