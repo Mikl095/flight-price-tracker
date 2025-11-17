@@ -1,18 +1,22 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 
 def create_flight_table(routes):
     rows = []
     for r in routes:
-        price = r["history"][-1]["price"] if r["history"] else None
+        last_price = r["history"][-1]["price"] if r.get("history") else None
+        gap = None
+        if last_price is not None and r.get("target_price") is not None:
+            gap = round(last_price - r["target_price"], 2)
         rows.append({
-            "Origine": r["origin"],
-            "Destination": r["destination"],
-            "Départ": r["departure"],
-            "Retour": r["return"],
-            "Prix Actuel": price,
-            "Seuil": r["target_price"],
-            "Écart": price - r["target_price"] if price else None,
-            "Notif": "ON" if r.get("notifications") else "OFF"
+            "Origin": r.get("origin"),
+            "Destination": r.get("destination"),
+            "Departure": r.get("departure"),
+            "Return": r.get("return"),
+            "Last price (€)": last_price,
+            "Target (€)": r.get("target_price"),
+            "Gap (€)": gap,
+            "Stops allowed": r.get("max_stops", "any"),
+            "Min baggage": r.get("min_bags", 0),
+            "Notifications": "ON" if r.get("notifications") else "OFF"
         })
     return pd.DataFrame(rows)
