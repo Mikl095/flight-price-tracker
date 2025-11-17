@@ -1,111 +1,116 @@
 import streamlit as st
-from datetime import datetime, date
-import random
+from datetime import date, datetime
+from utils.storage import ensure_data_file, load_routes, save_routes
+from utils.plotting import plot_price_history
 
-from utils import (
-    load_routes, save_routes,
-    load_email_config, save_email_config,
-    plot_price_history
-)
-
+# --- Initialisation ---  
+ensure_data_file()
 routes = load_routes()
-email_config = load_email_config()
 
 st.set_page_config(page_title="Flight Price Tracker", layout="wide")
-st.title("✈️ Flight Price Tracker – Notifications Email + Tracking Auto")
+st.title("✈️ Flight Price Tracker – Paris → Destinations personnalisables")
 
-
-# ---------------------------------------------------------
-# Configuration email
-# ---------------------------------------------------------
-st.sidebar.header("📧 Notifications Email")
-
-email_input = st.sidebar.text_input(
-    "Adresse email pour recevoir les alertes",
-    email_config.get("email", "")
-)
-
-def is_valid_email(email):
-    return "@" in email and "." in email and len(email) >= 6
-
-if st.sidebar.button("Enregistrer l'email"):
-    if is_valid_email(email_input):
-        save_email_config(email_input)
-        st.sidebar.success("Email enregistré ✔")
-    else:
-        st.sidebar.error("Adresse email invalide.")
-
-
-# ---------------------------------------------------------
-# Ajouter un vol
-# ---------------------------------------------------------
+# -------------------------------------------------------------------
+# Sidebar : ajouter un vol
+# -------------------------------------------------------------------
 st.sidebar.header("➕ Ajouter un vol")
 
-origin = st.sidebar.text_input("Origine IATA", "PAR")
-destination = st.sidebar.text_input("Destination IATA", "TYO")
+origin = st.sidebar.text_input("Origine", "PAR")
+
+dest_options = ["TYO", "OSA", "SPK", "PTP", "LON", "Autre…"]
+destination = st.sidebar.selectbox("Destination", dest_options)
+
+if destination == "Autre…":
+    destination = st.sidebar.text_input("Code IATA", value="")
 
 departure_date = st.sidebar.date_input("Départ", date.today())
 return_date = st.sidebar.date_input("Retour", date.today())
-target_price = st.sidebar.number_input("Prix cible (€)", min_value=50, value=450)
-tracking_per_day = st.sidebar.number_input("Trackings/jour", min_value=1, max_value=24, value=2)
-notifications = st.sidebar.checkbox("Activer notifications", True)
 
-if st.sidebar.button("Ajouter ce vol"):
-    route = {
-        "origin": origin.upper(),
-        "destination": destination.upper(),
-        "departure": str(departure_date),
-        "return": str(return_date),
-        "target_price": target_price,
-        "tracking_per_day": tracking_per_day,
-        "notifications": notifications,
-        "history": [],
-        "last_tracked": None
-    }
-    routes.append(route)
-    save_routes(routes)
-    st.sidebar.success("Vol ajouté ✔")
+target_price = st.sidebar.number_input("Seuil d’alerte (€)", min_value=50, value=350)
+tracking_per_day = st.sidebar.number_input("Trackings par jour", min_value=1, max_value=24, value=1)
+notifications = st.sidebar.checkbox("Activer les notifications email", value=False)
 
+# Ajouter un vol
+if st.sidebar.button("Ajouter ce suivi"):
+    if not destination:
+        st.sidebar.error("Veuillez entrer un code IATA.")
+    else:
+        new_entry = {
+            "origin": origin,
+            "destination": destination.upper(),
+            "departure": str(departure_date),
+            "return": str(return_date),
+            "target_price": target_price,
+            "tracking_per_day": tracking_per_day,
+            "notifications": notifications,
+            "last_tracked": None,
+            "history": []
+        }
+        routes.append(new_entry)
+        save_routes(routes)
+        st.sidebar.success(f"Ajouté : {origin} → {destination.upper()}")
+        st.rerun()
 
-# ---------------------------------------------------------
-# Liste des vols
-# ---------------------------------------------------------
-st.header("📊 Vols surveillés")
+# -------------------------------------------------------------------
+# Simulation tracking auto (en attendant Amadeus)
+# -------------------------------------------------------------------
+import random
+
+def simulate_price(route):
+    """Simule des prix aléatoires pour les tests."""
+    now = datetime.now()
+    price = random.randint(200, 900)
+
+    route["history"].append({
+        "date": now.isoformat(),
+        "price": price
+    })
+    route["last_tracked"] = now.isoformat()
+
+# -------------------------------------------------------------------
+# Section principale
+# -------------------------------------------------------------------
+st.header("📊 Vos vols surveillés")
 
 if not routes:
-    st.info("Aucun vol.")
+    st.info("Aucun vol surveillé.")
 else:
     for idx, r in enumerate(routes):
         st.subheader(f"✈️ {r['origin']} → {r['destination']}")
 
         st.write(
-            f"**Dates :** {r['departure']} → {r['return']}  •  "
-            f"**Prix cible :** {r['target_price']}€  •  "
-            f"**Notifications :** {'ON' if r['notifications'] else 'OFF'}  •  "
-            f"**Trackings/jour :** {r['tracking_per_day']}"
+            f"**Dates :** {r['departure']} → {r['return']} • "
+            f"**Seuil :** {r['target_price']}€ • "
+            f"**Tracking/jour :** {r['tracking_per_day']} • "
+            f"**Notifications :** {'ON 🔔' if r.get('notifications') else 'OFF'}"
         )
 
-        # Tracking manuel
-        if st.button(f"Mettre à jour maintenant", key=f"track-{idx}"):
-            price = random.randint(250, 900)
-            r["history"].append({"date": str(datetime.now()), "price": price})
-            r["last_tracked"] = str(datetime.now())
+        # --- Mettre à jour manuellement ---
+        if st.button("Mettre à jour maintenant", key=f"update-{idx}"):
+            simulate_price(r)
             save_routes(routes)
-            st.success(f"Prix actuel : {price}€")
 
-        # Graphique
+            last = r["history"][-1]["price"]
+            st.info(f"Prix actuel : {last} €")
+
+            if last <= r["target_price"]:
+                st.success("🔥 Sous votre seuil !")
+
+            st.rerun()
+
+        # --- Affichage du graphique ---
         if r["history"]:
             fig = plot_price_history(r["history"])
             st.pyplot(fig)
 
-        # ON/OFF notifications
-        if st.button(f"Toggle notifications", key=f"notif-{idx}"):
+        # --- Toggle notifications ---
+        if st.button("Activer/Désactiver notifications", key=f"notif-{idx}"):
             r["notifications"] = not r["notifications"]
             save_routes(routes)
             st.rerun()
 
-        # Supprimer
-        if st.button("Supprimer", key=f"del-{idx}"):
+        # --- Supprimer ---
+        if st.button("Supprimer ce suivi", key=f"del-{idx}"):
             routes.pop(idx)
             save_routes(routes)
             st.rerun()
