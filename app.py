@@ -114,7 +114,7 @@ else:
                 r.setdefault("history", []).append({"date": datetime.now().isoformat(), "price": price})
                 r["last_tracked"] = datetime.now().isoformat()
                 save_routes(routes)
-                st.experimental_rerun()
+                st.rerun()
         with cols[1]:
             if st.button("Toggle notif", key=f"toggle_{i}"):
                 r["notifications"] = not r.get("notifications", False)
