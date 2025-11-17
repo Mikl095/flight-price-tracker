@@ -1,35 +1,38 @@
 import random
 from datetime import datetime
-from utils.storage import load_routes, save_routes, load_email_config
-from sendgrid_client import sendgrid_send
+from utils.storage import load_routes, save_routes, load_email_config, append_log
+from email_utils import send_email
+import os
 
 routes = load_routes()
 email_cfg = load_email_config()
-TO_EMAIL = email_cfg.get("email")
-SEND_NOTIF_GLOBAL = email_cfg.get("enabled", False)
+GLOBAL_EMAIL_ENABLED = email_cfg.get("enabled", False)
+GLOBAL_EMAIL = email_cfg.get("email", "")
 
 def simulate_price_update(route):
-    # Simule prix — quand Amadeus sera connecté, remplace ici
-    price = random.randint(200, 900)
+    price = random.randint(150, 900)
     route.setdefault("history", [])
     route["history"].append({"date": datetime.now().isoformat(), "price": price})
     route["last_tracked"] = datetime.now().isoformat()
     return price
 
-changed = False
+changes = False
 for r in routes:
     price = simulate_price_update(r)
-    changed = True
-    # notification logic
-    if r.get("notifications") and SEND_NOTIF_GLOBAL and TO_EMAIL:
+    changes = True
+
+    # determine email recipient: route-specific or global
+    recipient = r.get("email") or GLOBAL_EMAIL
+    if r.get("notifications") and (r.get("email") or GLOBAL_EMAIL_ENABLED) and recipient:
         target = r.get("target_price")
         if target is not None and price <= target:
-            subject = f"[ALERTE] {r['origin']} → {r['destination']} à {price}€"
+            subject = f"[ALERTE] {r['origin']}→{r['destination']}: {price}€"
             body = f"Prix actuel: {price}€\nSeuil: {target}€\nDates: {r.get('departure')} → {r.get('return')}"
-            sendgrid_send(TO_EMAIL, subject, body)
+            ok = send_email(recipient, subject, body)
+            append_log(f"{datetime.now().isoformat()} - Notification sent to {recipient}: {ok}")
 
-if changed:
+if changes:
     save_routes(routes)
-    print("Tracking done, data.json updated")
+    append_log(f"{datetime.now().isoformat()} - Tracking run done, saved.")
 else:
-    print("No routes to update")
+    append_log(f"{datetime.now().isoformat()} - Tracking run: no routes")
