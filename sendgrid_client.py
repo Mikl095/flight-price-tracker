@@ -1,31 +1,25 @@
-import json
+import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
-import os
 
-CONFIG_FILE = "email_config.json"
+def sendgrid_send(to_email, subject, content):
+    api_key = os.environ.get("SENDGRID_KEY") or os.getenv("SENDGRID_API_KEY")
+    from_email = os.environ.get("SENDGRID_FROM", "alerts@flight-tracker.app")
+    if not api_key:
+        print("SendGrid API key missing. Not sending email.")
+        return False
 
-def load_email_config():
-    if os.path.isfile(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    return {"enabled": False, "email": "", "api_key": ""}
-
-def save_email_config(config):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=4)
-
-def send_notification(subject, message, to_email, api_key):
     try:
-        sg = SendGridAPIClient(api_key)
-        email = Mail(
-            from_email="noreply@flight-tracker.app",
+        message = Mail(
+            from_email=from_email,
             to_emails=to_email,
             subject=subject,
-            html_content=message
+            plain_text_content=content
         )
-        sg.send(email)
-        return True
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        print("SendGrid status:", response.status_code)
+        return response.status_code in (200, 202)
     except Exception as e:
-        print("❌ SendGrid error:", e)
+        print("SendGrid error:", e)
         return False
