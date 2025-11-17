@@ -124,7 +124,7 @@ else:
             if st.button("Supprimer", key=f"del_{i}"):
                 routes.pop(i)
                 save_routes(routes)
-                st.experimental_rerun()
+                st.rerun()
         with cols[3]:
             if st.button("Rafraîchir graphe", key=f"graph_{i}"):
                 st.rerun()
