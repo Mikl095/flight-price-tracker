@@ -8,7 +8,7 @@ from sendgrid_client import sendgrid_send
 import os
 import random
 
-
+from email_utils import send_email
 
 st.sidebar.header("📧 Test Email")
 
