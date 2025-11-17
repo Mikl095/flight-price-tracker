@@ -7,6 +7,7 @@ def export_csv(routes, path="export.csv"):
     for r in routes:
         last_price = r.get("history")[-1]["price"] if r.get("history") else None
         rows.append({
+            "id": r.get("id"),
             "origin": r.get("origin"),
             "destination": r.get("destination"),
             "departure": r.get("departure"),
@@ -23,11 +24,12 @@ def export_csv(routes, path="export.csv"):
 def export_pdf(routes, path="export.pdf"):
     c = canvas.Canvas(path)
     c.setFont("Helvetica", 10)
-    c.drawString(40, 810, f"Flight Tracker export - {datetime.now().isoformat()}")
-    y = 790
+    y = 800
+    c.drawString(40, y, f"Flight Tracker export - {datetime.now().isoformat()}")
+    y -= 20
     for r in routes:
         last_price = r.get("history")[-1]["price"] if r.get("history") else "-"
-        line = f"{r.get('origin')} -> {r.get('destination')} | dep:{r.get('departure')} | price:{last_price} | target:{r.get('target_price')}"
+        line = f"{r.get('origin')}->{r.get('destination')} dep:{r.get('departure')} price:{last_price} target:{r.get('target_price')}"
         c.drawString(40, y, line)
         y -= 14
         if y < 60:
