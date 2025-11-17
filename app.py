@@ -102,10 +102,10 @@ else:
         if st.button(f"Toggle notifications", key=f"notif-{idx}"):
             r["notifications"] = not r["notifications"]
             save_routes(routes)
-            st.experimental_rerun()
+            st.rerun()
 
         # Supprimer
         if st.button("Supprimer", key=f"del-{idx}"):
             routes.pop(idx)
             save_routes(routes)
-            st.experimental_rerun()
+            st.rerun()
