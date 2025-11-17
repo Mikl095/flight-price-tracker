@@ -8,8 +8,14 @@ def plot_price_history(history):
         ax.axis("off")
         return fig
 
-    dates = [datetime.fromisoformat(h["date"]) for h in history]
-    prices = [h["price"] for h in history]
+    dates = []
+    prices = []
+    for h in history:
+        try:
+            dates.append(datetime.fromisoformat(h["date"]))
+            prices.append(h["price"])
+        except Exception:
+            continue
 
     fig, ax = plt.subplots(figsize=(7,3))
     ax.plot(dates, prices, marker="o", linewidth=1)
