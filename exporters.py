@@ -1,19 +1,37 @@
 import pandas as pd
 from reportlab.pdfgen import canvas
+from datetime import datetime
 
-def export_csv(routes):
-    df = pd.DataFrame(routes)
-    df.to_csv("export.csv", index=False)
-    return "export.csv"
-
-def export_pdf(routes):
-    file = "export.pdf"
-    c = canvas.Canvas(file)
-    c.drawString(50, 800, "Flight Tracker Export")
-    y = 760
+def export_csv(routes, path="export.csv"):
+    rows = []
     for r in routes:
-        txt = f"{r['origin']} -> {r['destination']} | {r['departure']} | prix: {r['history'][-1]['price'] if r['history'] else '-'}"
-        c.drawString(50, y, txt)
-        y -= 20
+        last_price = r["history"][-1]["price"] if r.get("history") else None
+        rows.append({
+            "origin": r.get("origin"),
+            "destination": r.get("destination"),
+            "departure": r.get("departure"),
+            "return": r.get("return"),
+            "last_price": last_price,
+            "target_price": r.get("target_price"),
+            "notifications": r.get("notifications")
+        })
+    df = pd.DataFrame(rows)
+    df.to_csv(path, index=False)
+    return path
+
+def export_pdf(routes, path="export.pdf"):
+    c = canvas.Canvas(path)
+    c.setFont("Helvetica", 12)
+    y = 800
+    c.drawString(40, y, f"Flight Price Tracker export - {datetime.now().isoformat()}")
+    y -= 30
+    for r in routes:
+        last_price = r["history"][-1]["price"] if r.get("history") else "-"
+        line = f"{r.get('origin')}->{r.get('destination')} dep:{r.get('departure')} price:{last_price} target:{r.get('target_price')}"
+        c.drawString(40, y, line)
+        y -= 18
+        if y < 60:
+            c.showPage()
+            y = 800
     c.save()
-    return file
+    return path
