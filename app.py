@@ -8,6 +8,27 @@ from sendgrid_client import sendgrid_send
 import os
 import random
 
+
+
+st.sidebar.header("📧 Test Email")
+
+test_email = st.sidebar.text_input("Email de test", "")
+if st.sidebar.button("Envoyer un email de test"):
+    from email_utils import send_email
+    
+    ok = send_email(
+        to=test_email,
+        subject="Test SendGrid depuis votre Flight Tracker",
+        html="<h3>Test réussi 🎉</h3><p>Si vous recevez ce message, SendGrid est bien configuré.</p>"
+    )
+
+    if ok:
+        st.sidebar.success("Email envoyé !")
+    else:
+        st.sidebar.error("Erreur : vérifiez votre clé SendGrid.")
+
+
+
 # init
 ensure_data_file()
 routes = load_routes()
