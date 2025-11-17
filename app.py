@@ -24,29 +24,20 @@ st.title("✈️ Flight Price Tracker – Paris → Destinations personnalisable
 # =========================================================
 # ----- SIDEBAR : SECTION EMAIL + TEST EMAIL -----
 # =========================================================
-st.sidebar.subheader("📧 Configuration Email (SendGrid)")
+st.sidebar.subheader("📧 Test email")
+test_email = st.sidebar.text_input("Adresse email de test")
 
-with st.sidebar.expander("Tester l'envoi d'email", expanded=False):
-    test_email = st.text_input("Adresse email de test", key="test_email")
-
-    if st.button("Envoyer email de test", key="btn_test_email"):
-        if not test_email:
-            st.warning("Veuillez entrer une adresse email.")
-        else:
-            ok = send_email(
-                to=test_email,
-                subject="Test SendGrid – Flight Tracker",
-                html="""
-                    <h2>Test réussi 🎉</h2>
-                    <p>Votre configuration SendGrid fonctionne.</p>
-                """
-            )
-
-            if ok:
-                st.success("Email envoyé !")
-            else:
-                st.error("Erreur lors de l’envoi. Vérifiez la clé SENDGRID.")
-
+if st.sidebar.button("Envoyer un email de test"):
+    from email_utils import send_email
+    ok = send_email(
+        to=test_email,
+        subject="Test SendGrid — OK 🎉",
+        html="<p>Votre configuration SendGrid fonctionne !</p>"
+    )
+    if ok:
+        st.sidebar.success("Email envoyé ✔️")
+    else:
+        st.sidebar.error("Erreur lors de l’envoi ❌ — voir logs")
 
 # =========================================================
 # ----- SIDEBAR : AJOUTER UN NOUVEAU VOL -----
