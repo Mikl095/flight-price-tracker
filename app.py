@@ -215,7 +215,7 @@ else:
                 save_routes(routes)
                 append_log(f"{datetime.now().isoformat()} - Edited route {r['id']}")
                 st.success("Modifications enregistrées")
-                submitted = st.form_submit_button("Enregistrer")
+                st.form_submit_button("Enregistrer")
 
         # show last price
         if r.get("history"):
