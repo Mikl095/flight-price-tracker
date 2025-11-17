@@ -1,4 +1,8 @@
 import streamlit as st
+
+import os
+print("utils.py existe ?", os.path.isfile("utils.py"))
+
 from datetime import date, datetime
 from utils.storage import ensure_data_file, load_routes, save_routes
 from utils.plotting import plot_price_history
@@ -114,7 +118,3 @@ else:
             routes.pop(idx)
             save_routes(routes)
             st.rerun()
-
-
-import os
-print("utils.py existe ?", os.path.isfile("utils.py"))
