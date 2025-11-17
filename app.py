@@ -1,3 +1,8 @@
+import os
+print("Dossiers :", os.listdir("."))      # affiche la racine
+print("utils existe ?", os.path.isdir("utils"))
+print("Contenu utils :", os.listdir("utils") if os.path.isdir("utils") else "absent")
+
 import streamlit as st
 from datetime import date, datetime
 from utils.storage import ensure_data_file, load_routes, save_routes
