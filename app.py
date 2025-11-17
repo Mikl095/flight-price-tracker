@@ -74,7 +74,7 @@ if st.sidebar.button("Ajouter ce vol"):
     save_routes(routes)
     append_log(f"{datetime.now().isoformat()} - Added route {new['id']} {new['origin']}->{new['destination']}")
     st.success("Vol ajouté ✔")
-    st.experimental_rerun()
+    st.rerun()
 
 # ---------------- Main Dashboard ----------------
 st.header("📊 Dashboard")
@@ -113,7 +113,7 @@ else:
                         append_log(f"{datetime.now().isoformat()} - Sent immediate alert to {recipient}")
             save_routes(routes)
             st.success("Mise à jour simulée effectuée.")
-            st.experimental_rerun()
+            st.rerun()
 
     st.markdown("---")
 
@@ -129,21 +129,21 @@ else:
                 r["last_tracked"] = datetime.now().isoformat()
                 save_routes(routes)
                 append_log(f"{datetime.now().isoformat()} - Manual update {r['id']} price={price}")
-                st.experimental_rerun()
+                st.rerun()
 
         with cols[1]:
             if st.button("Toggle notif", key=f"toggle_{i}"):
                 r["notifications"] = not r.get("notifications", False)
                 save_routes(routes)
                 append_log(f"{datetime.now().isoformat()} - Toggle notif {r['id']} -> {r['notifications']}")
-                st.experimental_rerun()
+                st.rerun()
 
         with cols[2]:
             if st.button("Supprimer", key=f"del_{i}"):
                 append_log(f"{datetime.now().isoformat()} - Delete route {r['id']}")
                 routes.pop(i)
                 save_routes(routes)
-                st.experimental_rerun()
+                st.rerun()
 
         with cols[3]:
             if st.button("Envoyer test mail", key=f"testmail_{i}"):
@@ -191,7 +191,7 @@ else:
                     save_routes(routes)
                     append_log(f"{datetime.now().isoformat()} - Edited route {r['id']}")
                     st.success("Modifications enregistrées")
-                    st.experimental_rerun()
+                    st.rerun()
 
         # show last price
         if r.get("history"):
