@@ -2,10 +2,10 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 def plot_price_history(history):
-    # history: list of {"date": iso str, "price": number}
     if not history:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(6,3))
         ax.text(0.5, 0.5, "Aucun historique", ha="center")
+        ax.axis("off")
         return fig
 
     dates = [datetime.fromisoformat(h["date"]) for h in history]
