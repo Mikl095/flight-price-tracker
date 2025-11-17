@@ -52,7 +52,6 @@ def send_email(to: str, subject: str, html: str, reply_to: str = None) -> bool:
     )
 
     # Log d'état utile pour debug
-    
-print("SendGrid status:", response.status_code)
-print("SendGrid body:", response.text)
+    print("SendGrid response:", response.status_code, response.text)
+
     return response.status_code in [200, 201, 202]
