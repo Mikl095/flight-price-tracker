@@ -1,34 +1,34 @@
 import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
+from utils.storage import append_log
+from datetime import datetime
 
+FROM_EMAIL = "zendugan95@gmail.com"  # doit être vérifié en Single Sender dans SendGrid
 
 def send_email(to: str, subject: str, html: str) -> bool:
-    """Envoie un email via SendGrid et affiche le code de réponse."""
-
-    SENDGRID_KEY = os.getenv("SENDGRID_KEY")
-
-    if not SENDGRID_KEY:
-        print("❌ SENDGRID_KEY manquante (variable d’environnement absente).")
+    """Envoie un email via SendGrid. Retourne True si OK."""
+    key = os.getenv("SENDGRID_KEY")
+    timestamp = datetime.now().isoformat()
+    if not key:
+        append_log(f"{timestamp} - SendEmail - NO_KEY")
+        print("SENDGRID_KEY manquante")
         return False
 
     message = Mail(
-        from_email="zendugan95@gmail.com",   # Ton expéditeur validé
+        from_email=FROM_EMAIL,
         to_emails=to,
         subject=subject,
         html_content=html
     )
 
     try:
-        sg = SendGridAPIClient(SENDGRID_KEY)
+        sg = SendGridAPIClient(key)
         response = sg.send(message)
-
-        print("📨 SendGrid response code:", response.status_code)
-        print("📨 SendGrid response body:", response.body)
-        print("📨 SendGrid headers:", response.headers)
-
+        append_log(f"{timestamp} - SendEmail - to={to} status={response.status_code}")
+        print("SendGrid response:", response.status_code)
         return response.status_code in (200, 202)
-
     except Exception as e:
-        print("❌ Erreur SendGrid:", str(e))
+        append_log(f"{timestamp} - SendEmail - to={to} ERROR {e}")
+        print("SendGrid error:", e)
         return False
