@@ -27,6 +27,9 @@ if st.sidebar.button("Envoyer un email de test"):
     else:
         st.sidebar.error("Erreur : vérifiez votre clé SendGrid.")
 
+import os
+
+SENDGRID_KEY = os.getenv("SENDGRID_KEY")
 
 
 # init
