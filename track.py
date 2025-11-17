@@ -16,30 +16,26 @@ def save_routes(routes):
     with open(DATA_FILE, "w") as f:
         json.dump(routes, f, indent=4)
 
-def simulate_tracking(route):
-    price = random.randint(200, 800)
-    entry = {
-        "date": str(datetime.now()),
-        "price": price
-    }
-    route["history"].append(entry)
-    route["last_tracked"] = str(datetime.now())
-    return price
-
 routes = load_routes()
 
-for route in routes:
-    price = simulate_tracking(route)
+# email global enregistré dans streamlit
+try:
+    with open("email_config.json", "r") as f:
+        config = json.load(f)
+        EMAIL = config.get("email", None)
+except:
+    EMAIL = None
 
-    # Notification
-    if price <= route["target_price"]:
+for r in routes:
+    price = random.randint(300, 900)
+    r["history"].append({"date": str(datetime.now()), "price": price})
+    r["last_tracked"] = str(datetime.now())
+
+    if r["notifications"] and EMAIL and price <= r["target_price"]:
         send_email(
-            subject=f"🔥 Prix bas : {route['origin']} → {route['destination']}",
-            text=(
-                f"Prix actuel : {price}€\n"
-                f"Seuil : {route['target_price']}€\n"
-                f"Départ : {route['departure']}"
-            )
+            EMAIL,
+            f"[ALERTE] {r['origin']} → {r['destination']} : {price}€",
+            f"Prix actuel : {price}€\nObjectif : {r['target_price']}€"
         )
 
 save_routes(routes)
