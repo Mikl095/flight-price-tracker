@@ -114,3 +114,7 @@ else:
             routes.pop(idx)
             save_routes(routes)
             st.rerun()
+
+
+import os
+print("utils.py existe ?", os.path.isfile("utils.py"))
