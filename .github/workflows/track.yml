@@ -2,37 +2,31 @@ name: Auto Flight Tracking
 
 on:
   schedule:
-    - cron: "0 */10 * * *"   # toutes les 10h
-  workflow_dispatch:          # exécution manuelle
+    - cron: "0 */10 * * *"
+  workflow_dispatch:
 
 jobs:
-  track:
+  run-tracker:
     runs-on: ubuntu-latest
 
     env:
       SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-      SENDGRID_FROM: ${{ secrets.SENDGRID_FROM }}
-      SENDGRID_TO: ${{ secrets.SENDGRID_TO }}
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
-      - name: Install requirements
-        run: pip install requests matplotlib
+      - run: pip install requests matplotlib
 
-      - name: Run tracker
-        run: python track.py
+      - run: python track.py
 
-      - name: Commit data updates
+      - name: Commit changes
         run: |
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
           git add data.json || true
-          git commit -m "Auto update flight data" || true
+          git commit -m "Update tracking" || true
           git push
