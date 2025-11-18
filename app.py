@@ -773,6 +773,16 @@ with tab_search:
                 "stats": {}
             }
 
+# --- Force JSON-safe types ---
+def json_safe(v):
+    if hasattr(v, "item"):      # numpy types
+        return v.item()
+    if hasattr(v, "isoformat"): # datetime.date
+        return v.isoformat()
+    return v
+
+new = {k: json_safe(v) for k, v in new.items()}
+            
             routes.append(new)
             save_routes(routes)
             append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
