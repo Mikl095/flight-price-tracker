@@ -268,7 +268,7 @@ def render_config_tab(email_cfg, save_email_config):
         st.info("Aucun log pour l'instant.")
 
 
-        def render_search_tab(routes, save_routes, append_log):
+def render_search_tab(routes, save_routes, append_log):
     """Tab: Recherche & Suggestions (Simulation)."""
     st.header("🔎 Recherche & Suggestions (Simulation)")
     st.write("Simulation de prix selon origines, destinations, date et durée de séjour.")
