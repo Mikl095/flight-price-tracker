@@ -123,8 +123,14 @@ def render_dashboard(routes):
                 if not global_enabled or not rcpt:
                     st.warning("Email non configuré ou notifications désactivées.")
                 else:
-                    ok,_ = send_email(rcpt,f"Test alerte {r['origin']}→{r['destination']}","<p>Test</p>")
-                    st.info("Email envoyé" if ok else "Erreur envoi")
+                    ok, info = send_email(rcpt, f"Test alerte {r['origin']}→{r['destination']}", "<p>Test</p>")
+if ok:
+    st.success("Email accepté par l'API SendGrid (voir détails).")
+    st.json(info)
+else:
+    st.error("Échec envoi. Voir détails ci-dessous.")
+    st.json(info)
+
         with a2:
             st.write(f"Last tracked: {r.get('last_tracked') or 'Never'}")
         with a3:
