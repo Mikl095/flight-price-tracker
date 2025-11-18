@@ -1,119 +1,89 @@
 # exporters.py
+import os
 import pandas as pd
-from matplotlib import pyplot as plt
-from io import BytesIO
 from fpdf import FPDF
-import openpyxl
+import matplotlib.pyplot as plt
+from io import BytesIO
+from utils.storage import sanitize_dict
 from utils.plotting import plot_price_history
 
 # -----------------------------
 # EXPORT CSV
 # -----------------------------
-def export_csv(routes, path="export.csv", route_id=None):
+def export_csv(routes, path="export.csv", route_ids=None):
+    """Export CSV : tous les suivis ou un sous-ensemble par route_ids."""
     data = []
     for r in routes:
-        if route_id and r.get("id") != route_id:
+        if route_ids and r["id"] not in route_ids:
             continue
-        last_price = r.get("history")[-1]["price"] if r.get("history") else None
-        min_price = min((h["price"] for h in r.get("history", [])), default=None)
-        data.append({
-            "id": r.get("id"),
-            "origin": r.get("origin"),
-            "destination": r.get("destination"),
-            "departure": r.get("departure"),
-            "return": r.get("return"),
-            "stay_min": r.get("stay_min"),
-            "stay_max": r.get("stay_max"),
-            "last_price": last_price,
-            "min_price": min_price,
-            "target_price": r.get("target_price"),
-            "notifications": r.get("notifications"),
-            "email": r.get("email"),
-            "travel_class": r.get("travel_class"),
-            "tracking_per_day": r.get("tracking_per_day"),
-        })
+        for h in r.get("history", []):
+            data.append({
+                "id": r["id"],
+                "origin": r["origin"],
+                "destination": r["destination"],
+                "departure": r["departure"],
+                "return": r.get("return"),
+                "stay_min": r.get("stay_min"),
+                "stay_max": r.get("stay_max"),
+                "target_price": r.get("target_price"),
+                "price": h.get("price"),
+                "date": h.get("date")
+            })
     df = pd.DataFrame(data)
-    df.to_csv(path, index=False)
+    df.to_csv(path, index=False, encoding="utf-8")
     return path
 
 # -----------------------------
 # EXPORT XLSX
 # -----------------------------
-def export_xlsx(routes, path="export.xlsx", route_id=None):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Suivis"
+def export_xlsx(routes, path="export.xlsx", route_ids=None):
+    """Export XLSX avec historique et graphiques."""
+    with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
+        for r in routes:
+            if route_ids and r["id"] not in route_ids:
+                continue
+            df = pd.DataFrame(r.get("history", []))
+            if df.empty:
+                df = pd.DataFrame(columns=["date", "price"])
+            df.to_excel(writer, sheet_name=r["id"][:31], index=False)
 
-    headers = [
-        "ID","Origin","Destination","Departure","Return","Stay Min","Stay Max",
-        "Last Price","Min Price","Target Price","Notifications","Email","Class","Tracking/Day"
-    ]
-    ws.append(headers)
-
-    for r in routes:
-        if route_id and r.get("id") != route_id:
-            continue
-        last_price = r.get("history")[-1]["price"] if r.get("history") else None
-        min_price = min((h["price"] for h in r.get("history", [])), default=None)
-        row = [
-            r.get("id"), r.get("origin"), r.get("destination"),
-            r.get("departure"), r.get("return"),
-            r.get("stay_min"), r.get("stay_max"),
-            last_price, min_price,
-            r.get("target_price"), r.get("notifications"),
-            r.get("email"), r.get("travel_class"), r.get("tracking_per_day")
-        ]
-        ws.append(row)
-
-    # Ajouter feuille pour graphes
-    ws_graph = wb.create_sheet("Graphs")
-    for r in routes:
-        if route_id and r.get("id") != route_id:
-            continue
-        fig = plot_price_history(r.get("history", []))
-        img_bytes = BytesIO()
-        fig.savefig(img_bytes, format='png')
-        plt.close(fig)
-        img_bytes.seek(0)
-        img = openpyxl.drawing.image.Image(img_bytes)
-        img.anchor = 'A1'
-        ws_graph.add_image(img)
-    wb.save(path)
+            # Ajouter un graphique
+            fig = plot_price_history(r.get("history", []))
+            imgdata = BytesIO()
+            fig.savefig(imgdata, format='png')
+            imgdata.seek(0)
+            workbook = writer.book
+            worksheet = writer.sheets[r["id"][:31]]
+            worksheet.insert_image('E2', '', {'image_data': imgdata})
+            plt.close(fig)
     return path
 
 # -----------------------------
 # EXPORT PDF
 # -----------------------------
-def export_pdf(routes, path="export.pdf", route_id=None):
+def export_pdf(routes, path="export.pdf", route_ids=None):
+    """Export PDF avec historique et graphiques."""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
-
     for r in routes:
-        if route_id and r.get("id") != route_id:
+        if route_ids and r["id"] not in route_ids:
             continue
         pdf.add_page()
         pdf.set_font("Arial", 'B', 14)
-        pdf.cell(0, 10, f"{r.get('origin')} → {r.get('destination')} ({r.get('travel_class')})", ln=True)
+        pdf.cell(0, 10, f"Suivi: {r['origin']} → {r['destination']}", ln=True)
         pdf.set_font("Arial", '', 12)
-        pdf.multi_cell(0, 8, f"""
-ID: {r.get('id')}
-Departure: {r.get('departure')}
-Return: {r.get('return')}
-Stay: {r.get('stay_min')}–{r.get('stay_max')} jours
-Target Price: {r.get('target_price')}€
-Notifications: {r.get('notifications')}
-Email: {r.get('email')}
-Tracking/Day: {r.get('tracking_per_day')}
-""")
+        pdf.cell(0, 8, f"Départ: {r.get('departure')}, Retour: {r.get('return')}", ln=True)
+        pdf.cell(0, 8, f"Séjour: {r.get('stay_min')}-{r.get('stay_max')} j", ln=True)
+        pdf.cell(0, 8, f"Prix cible: {r.get('target_price')}€", ln=True)
+        pdf.cell(0, 8, f"Notifications: {'ON' if r.get('notifications') else 'OFF'}", ln=True)
 
-        # Ajouter graph
-        if r.get("history"):
-            fig = plot_price_history(r.get("history"))
-            img_bytes = BytesIO()
-            fig.savefig(img_bytes, format='png')
-            plt.close(fig)
-            img_bytes.seek(0)
-            pdf.image(img_bytes, x=10, w=190)
+        # Ajouter un graphique
+        fig = plot_price_history(r.get("history", []))
+        imgdata = BytesIO()
+        fig.savefig(imgdata, format='png')
+        imgdata.seek(0)
+        pdf.image(imgdata, x=10, y=None, w=180)
+        plt.close(fig)
 
     pdf.output(path)
     return path
