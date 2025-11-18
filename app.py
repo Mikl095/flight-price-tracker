@@ -407,7 +407,7 @@ with tab_dashboard:
             st.markdown("---")
 
 
-# ============================================================
+ ============================================================
 # TAB — AJOUTER UN SUIVI
 # ============================================================
 with tab_add:
@@ -528,25 +528,157 @@ with tab_add:
             "tracking_per_day": int(tracking_per_day),
 
             "notifications": bool(notifications_on),
-            "email": route_email.strip(),
+# ============================================================
+# TAB — AJOUTER UN SUIVI
+# ============================================================
+with tab_add:
 
-            "min_bags": int(min_bags),
-            "direct_only": bool(direct_only),
-            "max_stops": max_stops,
-            "avoid_airlines": [a.strip().upper() for a in avoid_airlines.split(",") if a.strip()],
-            "preferred_airlines": [a.strip().upper() for a in preferred_airlines.split(",") if a.strip()],
+    st.header("➕ Ajouter un suivi")
 
-            "history": [],
-            "last_tracked": None,
-            "stats": {}
-        }
+    with st.form("form_add_new"):
 
-        routes.append(new)
+        # ---- ORIGINES / DESTINATIONS MULTIPLES ----
+        origins = st.text_area(
+            "Origines (IATA, séparées par ,)", value="PAR"
+        )
+        destinations = st.text_area(
+            "Destinations (IATA, séparées par ,)", value="TYO"
+        )
+
+        # ---- DÉPART ----
+        departure_date = st.date_input(
+            "Date départ (approx.)",
+            date.today() + timedelta(days=90)
+        )
+        dep_flex = st.number_input(
+            "Plage départ ± jours",
+            min_value=0, max_value=30,
+            value=1
+        )
+
+        # ---- RETOUR (optionnel) ----
+        return_date = st.date_input(
+            "Date retour (optionnelle)",
+            value=None
+        )
+        return_flex = st.number_input(
+            "Plage retour ± jours",
+            min_value=0, max_value=30,
+            value=1
+        )
+        return_airport = st.text_input(
+            "Aéroport retour (IATA) — vide = même",
+            ""
+        )
+        priority_stay = st.checkbox(
+            "Priorité durée de séjour si pas de date de retour",
+            value=False
+        )
+
+        # ---- SÉJOUR ----
+        stay_min = st.number_input(
+            "Séjour min (jours)",
+            min_value=1, max_value=365,
+            value=6
+        )
+        stay_max = st.number_input(
+            "Séjour max (jours)",
+            min_value=1,
+            max_value=365,
+            value=10
+        )
+
+        # ---- PRIX / TRACKING ----
+        target_price = st.number_input(
+            "Seuil alerte (€)",
+            min_value=1.0,
+            value=450.0
+        )
+        tracking_per_day = st.number_input(
+            "Trackings par jour",
+            min_value=1, max_value=24,
+            value=2
+        )
+        notifications_on = st.checkbox(
+            "Activer notifications pour ce suivi",
+            value=True
+        )
+
+        # ---- PREFERENCES ----
+        min_bags = st.number_input(
+            "Min bagages (préférence)",
+            min_value=0, max_value=5,
+            value=0
+        )
+        direct_only = st.checkbox(
+            "Vol direct uniquement (préférence)",
+            value=False
+        )
+        max_stops = st.selectbox(
+            "Max escales (préférence)",
+            ["any", 0, 1, 2]
+        )
+        avoid_airlines = st.text_input(
+            "Compagnies à éviter (IATA, séparées par ,)",
+            value=""
+        )
+        preferred_airlines = st.text_input(
+            "Compagnies préférées (IATA, séparées par ,)",
+            value=""
+        )
+
+        route_email = st.text_input(
+            "Email pour ce suivi (vide = email global)",
+            value=""
+        )
+
+        add_submit = st.form_submit_button("Ajouter ce suivi")
+
+    # ---- ADD NEW ROUTE ----
+    if add_submit:
+        for origin in [o.strip().upper() for o in origins.split(",") if o.strip()]:
+            for destination in [d.strip().upper() for d in destinations.split(",") if d.strip()]:
+                new = {
+                    "id": str(uuid.uuid4()),
+
+                    "origin": origin,
+                    "destination": destination,
+
+                    "departure": departure_date.isoformat(),
+                    "departure_flex_days": int(dep_flex),
+
+                    "return": return_date.isoformat() if return_date else None,
+                    "return_flex_days": int(return_flex),
+                    "priority_stay": priority_stay,
+                    "return_airport": return_airport.upper().strip() if return_airport else None,
+
+                    "stay_min": int(stay_min),
+                    "stay_max": int(stay_max),
+
+                    "target_price": float(target_price),
+                    "tracking_per_day": int(tracking_per_day),
+
+                    "notifications": bool(notifications_on),
+                    "email": route_email.strip(),
+
+                    "min_bags": int(min_bags),
+                    "direct_only": bool(direct_only),
+                    "max_stops": max_stops,
+                    "avoid_airlines": [a.strip().upper() for a in avoid_airlines.split(",") if a.strip()],
+                    "preferred_airlines": [a.strip().upper() for a in preferred_airlines.split(",") if a.strip()],
+
+                    "history": [],
+                    "last_tracked": None,
+                    "stats": {}
+                }
+
+                routes.append(new)
+                append_log(f"{datetime.now().isoformat()} - Added route {new['id']}")
+
         save_routes(routes)
-        append_log(f"{datetime.now().isoformat()} - Added route {new['id']}")
-
-        st.success("Suivi ajouté ✔")
+        st.success("Suivi(s) ajouté(s) ✔")
         st.rerun()
+
                # ============================================================
 # TAB — CONFIGURATION
 # ============================================================
