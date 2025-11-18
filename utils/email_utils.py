@@ -2,12 +2,14 @@
 import os
 import logging
 
+# Streamlit secrets
 try:
     import streamlit as st
     _ST_AVAILABLE = True
 except Exception:
     _ST_AVAILABLE = False
 
+# SendGrid
 try:
     from sendgrid import SendGridAPIClient
     from sendgrid.helpers.mail import Mail
@@ -16,6 +18,7 @@ except Exception:
     _HAS_SENDGRID = False
 
 logger = logging.getLogger("email_utils")
+
 
 def _get_sendgrid_key():
     if _ST_AVAILABLE:
@@ -27,6 +30,7 @@ def _get_sendgrid_key():
         except Exception:
             pass
     return os.environ.get("SENDGRID_KEY") or os.environ.get("SENDGRID_API_KEY")
+
 
 def send_email(to: str, subject: str, body: str, from_email: str = None) -> (bool, str):
     key = _get_sendgrid_key()
@@ -42,7 +46,7 @@ def send_email(to: str, subject: str, body: str, from_email: str = None) -> (boo
 
     default_from = None
     if _ST_AVAILABLE:
-        default_from = getattr(st.secrets, "SENDGRID_FROM", None)
+        default_from = st.secrets.get("SENDGRID_FROM") if hasattr(st, "secrets") else None
     if not default_from:
         default_from = os.environ.get("SENDGRID_FROM") or os.environ.get("EMAIL_FROM")
 
