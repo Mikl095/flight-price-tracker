@@ -113,6 +113,8 @@ def ensure_route_fields(r: dict):
     r.setdefault("history", [])
     r.setdefault("last_tracked", None)
     r.setdefault("stats", {})
+    r.setdefault("travel_class", "Economy")
+
 
 
 def increment_route_stat(route: dict, key: str):
