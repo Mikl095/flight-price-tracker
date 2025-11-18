@@ -1,8 +1,10 @@
 import random
 from datetime import datetime
-from utils.storage import load_routes, save_routes, load_email_config, append_log, count_updates_last_24h, ensure_route_fields, increment_route_stat
-from email_utils import send_email
-import os
+from utils.storage import (
+    load_routes, save_routes, load_email_config, append_log, 
+    count_updates_last_24h, ensure_route_fields, increment_route_stat
+)
+from utils.email_utils import send_email
 
 routes = load_routes()
 email_cfg = load_email_config()
@@ -13,6 +15,7 @@ run_ts = datetime.now().isoformat()
 append_log(f"{run_ts} - track.py start")
 
 changed = False
+
 for r in routes:
     ensure_route_fields(r)
     per_day = int(r.get("tracking_per_day", 1))
@@ -21,7 +24,7 @@ for r in routes:
         append_log(f"{datetime.now().isoformat()} - SKIP {r.get('id','?')} already_today={already_today} per_day={per_day}")
         continue
 
-    # simulate price fetch (replace with real API)
+    # simulate price fetch
     price = random.randint(120, 1000)
     now = datetime.now().isoformat()
     r.setdefault("history", []).append({"date": now, "price": price})
