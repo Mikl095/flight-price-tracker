@@ -1,8 +1,9 @@
-# utils/storage.py
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import List, Dict, Any
+import numpy as np
+import pandas as pd
 
 DATA_DIR = "."
 ROUTES_FILE = os.path.join(DATA_DIR, "routes.json")
@@ -25,23 +26,22 @@ def ensure_data_file():
     if not os.path.exists(ROUTES_FILE):
         _atomic_write(ROUTES_FILE, b"[]")
     if not os.path.exists(EMAIL_CFG_FILE):
-        _atomic_write(EMAIL_CFG_FILE, json.dumps({"enabled": False, "email": "", "api_user": "", "api_pass": ""}).encode("utf-8"))
+        _atomic_write(
+            EMAIL_CFG_FILE,
+            json.dumps({"enabled": False, "email": "", "api_user": "", "api_pass": ""}).encode("utf-8")
+        )
     if not os.path.exists(LOG_FILE):
         open(LOG_FILE, "a").close()
 
 
 def load_routes() -> List[Dict[str, Any]]:
-    """Load list of routes from JSON, return [] on parse error but avoid crash."""
     try:
         with open(ROUTES_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, list):
                 return data
             return []
-    except FileNotFoundError:
-        return []
     except Exception:
-        # if malformed, rename the old file for inspection and return empty list
         try:
             ts = datetime.now().strftime("%Y%m%d%H%M%S")
             bad = f"{ROUTES_FILE}.broken.{ts}"
@@ -52,7 +52,6 @@ def load_routes() -> List[Dict[str, Any]]:
 
 
 def save_routes(routes: List[Dict[str, Any]]):
-    """Save routes to JSON atomically."""
     b = json.dumps(routes, ensure_ascii=False, indent=2).encode("utf-8")
     _atomic_write(ROUTES_FILE, b)
 
@@ -62,8 +61,6 @@ def load_email_config() -> dict:
         with open(EMAIL_CFG_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             return data if isinstance(data, dict) else {}
-    except FileNotFoundError:
-        return {}
     except Exception:
         return {}
 
@@ -74,17 +71,14 @@ def save_email_config(cfg: dict):
 
 
 def append_log(line: str):
-    """Append a single line to the log file (with newline)."""
     try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(line.rstrip("\n") + "\n")
     except Exception:
-        # last resort: ignore log writes to avoid breaking app
         pass
 
 
 def count_updates_last_24h(route: dict) -> int:
-    """Return number of history entries in the last 24 hours (robust to formats)."""
     now = datetime.now()
     cutoff = now - timedelta(hours=24)
     cnt = 0
@@ -93,23 +87,19 @@ def count_updates_last_24h(route: dict) -> int:
         if not d:
             continue
         try:
-            # accept isoformat strings or epoch numbers
             if isinstance(d, (int, float)):
                 dt = datetime.fromtimestamp(d)
             else:
-                # assume string
                 dt = datetime.fromisoformat(str(d))
             if dt >= cutoff:
                 cnt += 1
         except Exception:
-            # ignore malformed dates
             continue
     return cnt
 
 
 def ensure_route_fields(r: dict):
     """Ensure a route dict has minimal expected keys (safe defaults)."""
-    # minimal fields used by UI
     r.setdefault("id", "")
     r.setdefault("origin", "")
     r.setdefault("destination", "")
@@ -133,9 +123,6 @@ def ensure_route_fields(r: dict):
     r.setdefault("last_tracked", None)
     r.setdefault("stats", {})
 
-import numpy as np
-import pandas as pd
-from datetime import date, datetime
 
 def json_safe(v):
     """Convert any value into a JSON-serializable type."""
@@ -152,6 +139,7 @@ def json_safe(v):
     if isinstance(v, (date, datetime)):
         return v.isoformat()
     return v
+
 
 def sanitize_dict(d):
     """Recursively sanitize any dict for JSON writing."""
