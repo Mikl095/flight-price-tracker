@@ -2,23 +2,23 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-import os
-from io import BytesIO
 from utils.storage import json_safe
+from io import BytesIO
 
 # -----------------------------
-# EXPORT XLSX DÉTAILLÉ
+# EXPORT XLSX (tous ou un seul suivi)
 # -----------------------------
-def export_detailed_xlsx(routes, path="export_detailed.xlsx"):
+def export_detailed_xlsx(routes, path="export_detailed.xlsx", single_route_id=None):
     with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
-        for r in routes:
-            sheet_name = f"{r['origin']}-{r['destination']}"[:31]  # Excel limit 31 chars
+        selected_routes = routes
+        if single_route_id:
+            selected_routes = [r for r in routes if r["id"] == single_route_id]
+
+        for r in selected_routes:
+            sheet_name = f"{r['origin']}-{r['destination']}"[:31]
             history = r.get("history", [])
-            if history:
-                df_hist = pd.DataFrame(history)
-            else:
-                df_hist = pd.DataFrame(columns=["date","price"])
-            # Infos générales
+            df_hist = pd.DataFrame(history) if history else pd.DataFrame(columns=["date","price"])
+
             info_dict = {
                 "ID": r.get("id"),
                 "Origine": r.get("origin"),
@@ -47,14 +47,18 @@ def export_detailed_xlsx(routes, path="export_detailed.xlsx"):
     return path
 
 # -----------------------------
-# EXPORT PDF DÉTAILLÉ
+# EXPORT PDF (tous ou un seul suivi)
 # -----------------------------
-def export_detailed_pdf(routes, path="export_detailed.pdf"):
+def export_detailed_pdf(routes, path="export_detailed.pdf", single_route_id=None):
     pp = PdfPages(path)
-    for r in routes:
+    selected_routes = routes
+    if single_route_id:
+        selected_routes = [r for r in routes if r["id"] == single_route_id]
+
+    for r in selected_routes:
         plt.figure(figsize=(8,6))
         plt.title(f"{r['origin']} → {r['destination']} ({r.get('travel_class','Eco')})")
-        # Infos générales
+
         info_text = "\n".join([f"{k}: {json_safe(v)}" for k,v in {
             "ID": r.get("id"),
             "Classe": r.get("travel_class","Eco"),
@@ -75,8 +79,7 @@ def export_detailed_pdf(routes, path="export_detailed.pdf"):
             "Compagnies préférées": ",".join(r.get("preferred_airlines",[])),
         }.items()])
         plt.text(0,1, info_text, fontsize=10, va='top', ha='left', wrap=True)
-        
-        # Graphique des prix
+
         history = r.get("history", [])
         if history:
             dates = [d['date'] for d in history]
@@ -90,6 +93,7 @@ def export_detailed_pdf(routes, path="export_detailed.pdf"):
             plt.tight_layout()
             pp.savefig(fig2)
             plt.close(fig2)
+
         pp.savefig()
         plt.close()
     pp.close()
