@@ -78,7 +78,8 @@ def add_route_form(routes, save_routes, append_log):
 def edit_route_form(r, idx, routes, save_routes, append_log, email_cfg):
     """
     Render the edit form for a single route.
-    Note: routes, save_routes and append_log are required to persist changes.
+    - Allows omitting the return date (priority on stay duration) like in creation.
+    - Provides same fields/features as creation (priority_stay, return_airport, etc).
     """
     with st.expander("✏️ Éditer ce suivi"):
         with st.form(key=f"dash_form_{r['id']}"):
@@ -95,17 +96,28 @@ def edit_route_form(r, idx, routes, save_routes, append_log, email_cfg):
             departure_e = st.date_input("Date départ", value=dep_default)
             depflex = st.number_input("Flex départ ± jours", min_value=0, max_value=30, value=int(r.get("departure_flex_days", 0)))
 
-            # RETOUR
-            try:
-                ret_default = (datetime.fromisoformat(r.get("return")).date() if r.get("return") else (dep_default + timedelta(days=7)))
-            except Exception:
-                ret_default = dep_default + timedelta(days=7)
+            # OPTIONNEL: Retour ou priorité durée de séjour (comme creation)
+            priority_stay = st.checkbox(
+                "Priorité durée de séjour (pas de date de retour définie)",
+                value=bool(r.get("priority_stay", False))
+            )
 
-            return_e = st.date_input("Date retour", value=ret_default)
+            # If priority_stay is False, allow editing a return date (optionally empty)
+            if not priority_stay:
+                # try to parse existing return date; if absent, default to dep + 7
+                try:
+                    ret_default = (datetime.fromisoformat(r.get("return")).date() if r.get("return") else (dep_default + timedelta(days=7)))
+                except Exception:
+                    ret_default = dep_default + timedelta(days=7)
+                return_e = st.date_input("Date retour (optionnelle)", value=ret_default)
+            else:
+                # show a hint to user
+                st.write("Aucun date de retour sera sauvegardée — la durée de séjour (stay_min/stay_max) sera priorisée.")
+
             return_flex_e = st.number_input("Flex retour ± jours", min_value=0, max_value=30, value=int(r.get("return_flex_days", 0)))
             return_airport_e = st.text_input("Aéroport retour (IATA) — vide = même", value=r.get("return_airport") or "")
 
-            # SÉJOUR
+            # SÉJOUR (identique à création)
             stay_min_e = st.number_input("Séjour min (jours)", min_value=1, max_value=365, value=int(r.get("stay_min", 1)))
             stay_max_e = st.number_input("Séjour max (jours)", min_value=1, max_value=365, value=int(r.get("stay_max", 1)))
 
@@ -125,13 +137,20 @@ def edit_route_form(r, idx, routes, save_routes, append_log, email_cfg):
             submit_edit = st.form_submit_button("Enregistrer les modifications")
 
         if submit_edit:
-            # apply edits
+            # apply edits (same keys as creation)
             r["origin"] = origin_e.upper().strip()
             r["destination"] = dest_e.upper().strip()
             r["departure"] = departure_e.isoformat()
             r["departure_flex_days"] = int(depflex)
 
-            r["return"] = return_e.isoformat()
+            # return handling: if priority_stay -> clear return; else save return date
+            r["priority_stay"] = bool(priority_stay)
+            if priority_stay:
+                r["return"] = None
+            else:
+                # return_e exists only when priority_stay is False
+                r["return"] = return_e.isoformat() if return_e else None
+
             r["return_flex_days"] = int(return_flex_e)
             r["return_airport"] = return_airport_e.upper().strip() if return_airport_e else None
 
@@ -151,6 +170,7 @@ def edit_route_form(r, idx, routes, save_routes, append_log, email_cfg):
             r["avoid_airlines"] = [a.strip().upper() for a in avoid_e.split(",") if a.strip()]
             r["preferred_airlines"] = [a.strip().upper() for a in pref_e.split(",") if a.strip()]
 
+            # persist and log
             save_routes(routes)
             append_log(f"{datetime.now().isoformat()} - Edited route {r['id']}")
             st.success("Modifications enregistrées.")
