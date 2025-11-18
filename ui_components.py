@@ -323,94 +323,76 @@ def render_search_tab(routes, save_routes):
 
         # ------------------ Add from search form ------------------
         with st.form("add_from_search"):
-            # Mapping index -> description
-            mapping = [
-                {
-                    "idx": i,
-                    "desc": f"{df_res.iloc[i]['origin']} → {df_res.iloc[i]['destination']} ({df_res.iloc[i]['departure']}) — {int(df_res.iloc[i]['price'])}€ — {int(df_res.iloc[i]['stay_days'])}j"
-                }
-                for i in range(len(df_res))
-            ]
+    # Mapping: use ID as internal value
+    mapping = [
+        {
+            "id": row["id"] if "id" in row else str(i),
+            "desc": f"{row['origin']} → {row['destination']} ({row['departure']}) — {int(row['price'])}€"
+        }
+        for i, row in df_res.iterrows()
+    ]
 
-            # Display table (limited to 50 for UI)
+    # Display table (optional, for clarity)
+    st.table(pd.DataFrame(mapping))
+
+    # Multiselect: internal values are IDs
+    selected_ids = st.multiselect(
+        "Sélectionner les résultats à ajouter",
+        options=[m["id"] for m in mapping],
+        format_func=lambda i: i  # affichage = l'ID ou on peut mettre m["desc"] via dict
+    )
+
+    add_submit = st.form_submit_button("Ajouter")
+
+if add_submit and selected_ids:
+    created = 0
+    for sel_id in selected_ids:
+        # find the row with this id
+        row = next((r for i, r in df_res.iterrows() if ("id" in r and r["id"] == sel_id) or str(i) == sel_id), None)
+        if row is None:
+            continue
+
+        # priority stay if no return
+        priority = False
+        if "return" not in row or pd.isna(row.get("return")) or not str(row.get("return")).strip():
+            priority = True
+            return_iso = None
+        else:
             try:
-                if len(mapping) <= 50:
-                    st.table(mapping)
-                else:
-                    st.table(pd.DataFrame(mapping).head(50))
-                    st.caption(f"Affichage limité aux 50 premiers résultats (sur {len(mapping)}).")
+                return_iso = pd.to_datetime(row["return"]).date().isoformat()
             except Exception:
-                for m in mapping[:50]:
-                    st.write(f"{m['idx']}: {m['desc']}")
+                return_iso = (pd.to_datetime(row["departure"]).date() + pd.Timedelta(days=int(row.get("stay_days", 0)))).isoformat()
 
-            # Multiselect: internal values = real indices
-            selected_indices = st.multiselect(
-                "Sélectionner les résultats à ajouter (par index affiché dans le tableau)",
-                options=[m["idx"] for m in mapping],
-                format_func=lambda i: str(i)
-            )
+        new = {
+            "id": str(uuid.uuid4()),
+            "origin": row["origin"],
+            "destination": row["destination"],
+            "departure": row["departure"],
+            "departure_flex_days": 0,
+            "return": return_iso,
+            "return_flex_days": 0,
+            "priority_stay": priority,
+            "return_airport": None,
+            "stay_min": int(row["stay_days"]),
+            "stay_max": int(row["stay_days"]),
+            "target_price": float(row["price"]) * 0.9,
+            "tracking_per_day": 2,
+            "notifications": False,
+            "email": "",
+            "min_bags": 0,
+            "direct_only": False,
+            "max_stops": "any",
+            "avoid_airlines": [],
+            "preferred_airlines": [],
+            "history": [{"date": datetime.now().isoformat(), "price": int(row["price"])}],
+            "last_tracked": datetime.now().isoformat(),
+            "stats": {}
+        }
 
-            add_submit = st.form_submit_button("Ajouter")
+        routes.append(sanitize_dict(new))
+        append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+        created += 1
 
-        if add_submit and selected_indices:
-            created = 0
-            for idx in selected_indices:
-                row = df_res.iloc[idx]
-
-                # Parse departure date
-                dep_dt = None
-                try:
-                    dep_dt = pd.to_datetime(row["departure"])
-                except Exception:
-                    try:
-                        dep_dt = datetime.fromisoformat(str(row["departure"]))
-                    except Exception:
-                        dep_dt = None
-
-                # Determine priority_stay and return date
-                if pd.isna(row.get("return")) or not str(row.get("return")).strip():
-                    priority = True
-                    return_iso = None
-                else:
-                    priority = False
-                    try:
-                        return_iso = pd.to_datetime(row["return"]).date().isoformat()
-                    except Exception:
-                        if dep_dt is not None:
-                            return_iso = (dep_dt.date() + pd.Timedelta(days=int(row.get("stay_days", 0)))).isoformat()
-                        else:
-                            return_iso = None
-
-                new = {
-                    "id": str(uuid.uuid4()),
-                    "origin": row["origin"],
-                    "destination": row["destination"],
-                    "departure": row["departure"],
-                    "departure_flex_days": 0,
-                    "return": return_iso,
-                    "return_flex_days": 0,
-                    "priority_stay": bool(priority),
-                    "return_airport": None,
-                    "stay_min": int(row["stay_days"]),
-                    "stay_max": int(row["stay_days"]),
-                    "target_price": float(row["price"]) * 0.9,
-                    "tracking_per_day": 2,
-                    "notifications": False,
-                    "email": "",
-                    "min_bags": 0,
-                    "direct_only": False,
-                    "max_stops": "any",
-                    "avoid_airlines": [],
-                    "preferred_airlines": [],
-                    "history": [{"date": datetime.now().isoformat(), "price": int(row["price"])}],
-                    "last_tracked": datetime.now().isoformat(),
-                    "stats": {}
-                }
-
-                routes.append(sanitize_dict(new))
-                append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
-                created += 1
-
-            save_routes(routes)
-            st.success(f"{created} suivi(s) ajouté(s) ✔")
-            st.rerun()
+    save_routes(routes)
+    st.success(f"{created} suivi(s) ajouté(s) ✔")
+    st.rerun()
