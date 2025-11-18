@@ -19,6 +19,7 @@ from utils.email_utils import send_email
 ensure_data_file()
 routes = load_routes()
 email_cfg = load_email_config()
+global_notif_enabled = bool(email_cfg.get("enabled", False))
 
 # -----------------------------
 # TOP BAR
@@ -375,7 +376,9 @@ elif tab=="Configuration":
         cfg["api_user"] = api_user.strip()
         cfg["api_pass"] = api_pass.strip()
         save_email_config(cfg)
+        global_notif_enabled = bool(cfg.get("enabled", False))
         st.success("Configuration enregistrée ✔")
+        st.rerun()  # optionnel mais pratique pour recharger l'état
 
 # -----------------------------
 # SIDEBAR — Export (tolérant: path ou buffer)
