@@ -268,8 +268,8 @@ def render_config_tab(email_cfg, save_email_config):
         st.info("Aucun log pour l'instant.")
 
 
-def render_search_tab(routes, save_routes):
-    """Tab: Recherche & suggestions (simulation)."""
+def render_search_tab(routes, save_routes, append_log):
+    """Tab: Recherche & Suggestions (Simulation)."""
     st.header("🔎 Recherche & Suggestions (Simulation)")
     st.write("Simulation de prix selon origines, destinations, date et durée de séjour.")
 
@@ -293,7 +293,8 @@ def render_search_tab(routes, save_routes):
                     "departure": (start_date + timedelta(days=delta)).isoformat(),
                     "return": (return_date_opt if return_date_opt else (start_date + timedelta(days=delta + int(stay_days)))).isoformat(),
                     "stay_days": int(stay_days),
-                    "price": random.randint(120, 1200)
+                    "price": random.randint(120, 1200),
+                    "id": str(uuid.uuid4())
                 }
                 for o in origins for d in dests
                 for delta in range(-search_window_days, search_window_days + 1)
@@ -304,7 +305,7 @@ def render_search_tab(routes, save_routes):
             st.session_state["last_search"] = df_res
             st.success(f"Simulation terminée : {len(df_res)} résultats générés.")
 
-    # Display simulation results if any
+    # Display results if available
     if "last_search" in st.session_state:
         df_res = st.session_state["last_search"]
 
@@ -316,83 +317,4 @@ def render_search_tab(routes, save_routes):
             st.dataframe(df_res)
 
         st.subheader("💸 Top 10 des dates les moins chères")
-        st.table(df_res.sort_values("price").head(10)[["origin", "destination", "departure", "return", "stay_days", "price"]])
-
-        st.markdown("---")
-        st.subheader("➕ Ajouter un ou plusieurs résultats comme suivi")
-
-        # ------------------ Add from search form ------------------
-        with st.form("add_from_search"):
-    # Mapping: use ID as internal value
-    mapping = [
-        {
-            "id": row["id"] if "id" in row else str(i),
-            "desc": f"{row['origin']} → {row['destination']} ({row['departure']}) — {int(row['price'])}€"
-        }
-        for i, row in df_res.iterrows()
-    ]
-
-    # Display table (optional, for clarity)
-    st.table(pd.DataFrame(mapping))
-
-    # Multiselect: internal values are IDs
-    selected_ids = st.multiselect(
-        "Sélectionner les résultats à ajouter",
-        options=[m["id"] for m in mapping],
-        format_func=lambda i: i  # affichage = l'ID ou on peut mettre m["desc"] via dict
-    )
-
-    add_submit = st.form_submit_button("Ajouter")
-
-if add_submit and selected_ids:
-    created = 0
-    for sel_id in selected_ids:
-        # find the row with this id
-        row = next((r for i, r in df_res.iterrows() if ("id" in r and r["id"] == sel_id) or str(i) == sel_id), None)
-        if row is None:
-            continue
-
-        # priority stay if no return
-        priority = False
-        if "return" not in row or pd.isna(row.get("return")) or not str(row.get("return")).strip():
-            priority = True
-            return_iso = None
-        else:
-            try:
-                return_iso = pd.to_datetime(row["return"]).date().isoformat()
-            except Exception:
-                return_iso = (pd.to_datetime(row["departure"]).date() + pd.Timedelta(days=int(row.get("stay_days", 0)))).isoformat()
-
-        new = {
-            "id": str(uuid.uuid4()),
-            "origin": row["origin"],
-            "destination": row["destination"],
-            "departure": row["departure"],
-            "departure_flex_days": 0,
-            "return": return_iso,
-            "return_flex_days": 0,
-            "priority_stay": priority,
-            "return_airport": None,
-            "stay_min": int(row["stay_days"]),
-            "stay_max": int(row["stay_days"]),
-            "target_price": float(row["price"]) * 0.9,
-            "tracking_per_day": 2,
-            "notifications": False,
-            "email": "",
-            "min_bags": 0,
-            "direct_only": False,
-            "max_stops": "any",
-            "avoid_airlines": [],
-            "preferred_airlines": [],
-            "history": [{"date": datetime.now().isoformat(), "price": int(row["price"])}],
-            "last_tracked": datetime.now().isoformat(),
-            "stats": {}
-        }
-
-        routes.append(sanitize_dict(new))
-        append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
-        created += 1
-
-    save_routes(routes)
-    st.success(f"{created} suivi(s) ajouté(s) ✔")
-    st.rerun()
+        st.table(df_res.sort_values("price").head(10)[["origin", "destination", "departure]()]()
