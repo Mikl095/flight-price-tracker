@@ -5,3 +5,5 @@ matplotlib
 pandas
 reportlab
 python-dateutil
+openpyxl
+XlsxWriter
