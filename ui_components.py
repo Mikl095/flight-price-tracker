@@ -1,130 +1,108 @@
 # ui_components.py
 import streamlit as st
-from datetime import datetime, timedelta
 from utils.storage import load_routes, save_routes, ensure_route_fields, sanitize_dict
-from utils.email_utils import send_email
+from utils.plotting import plot_price_history
+from datetime import datetime, timedelta
 import uuid
-import pandas as pd
 
 def render_top_bar():
     st.title("Flight Price Tracker")
     st.markdown("---")
 
 def render_dashboard(routes):
-    st.subheader("Suivis existants")
-    if not routes:
-        st.info("Aucun suivi disponible.")
-        return
+    st.header("Tableau de bord")
     for r in routes:
-        ensure_route_fields(r)
-        col1, col2 = st.columns([3,1])
-        with col1:
-            st.markdown(f"**{r['origin']} → {r['destination']}**")
-            st.markdown(f"Départ: {r['departure']} | Retour: {r.get('return', 'N/A')} | Prix cible: {r['target_price']}€")
-        with col2:
-            if st.button("Éditer", key=f"edit_{r['id']}"):
-                st.session_state["edit_id"] = r["id"]
+        st.subheader(f"{r['origin']} → {r['destination']}")
+        if r.get("history"):
+            st.pyplot(plot_price_history(r["history"]))
+        else:
+            st.info("Pas d'historique de prix")
 
 def render_add_tab(routes):
-    st.subheader("Ajouter un suivi")
-    with st.form("add_form"):
-        origin = st.text_input("Origine")
-        destination = st.text_input("Destination")
-        departure = st.date_input("Départ")
-        return_date = st.date_input("Retour (facultatif)", value=None)
-        stay_min = st.number_input("Durée minimale du séjour (jours)", min_value=1, value=1)
-        stay_max = st.number_input("Durée maximale du séjour (jours)", min_value=1, value=7)
-        target_price = st.number_input("Prix cible (€)", min_value=1.0, value=100.0)
-        notifications = st.checkbox("Activer notifications")
+    st.header("Ajouter un suivi")
+    with st.form("add_route_form"):
+        origin = st.text_input("Aéroport de départ")
+        destination = st.text_input("Aéroport de destination")
+        departure = st.date_input("Date de départ")
+        stay_min = st.number_input("Séjour min (jours)", value=1, min_value=1)
+        stay_max = st.number_input("Séjour max (jours)", value=1, min_value=1)
+        target_price = st.number_input("Prix cible (€)", value=100)
+        direct_only = st.checkbox("Vol direct uniquement")
+        notifications = st.checkbox("Notifications")
         email = st.text_input("Email pour notifications")
-        add_submit = st.form_submit_button("Ajouter")
+        submit = st.form_submit_button("Ajouter")
 
-    if add_submit:
-        new_id = str(uuid.uuid4())
-        r = {
-            "id": new_id,
-            "origin": origin,
-            "destination": destination,
-            "departure": departure.isoformat(),
-            "return": return_date.isoformat() if return_date else None,
-            "stay_min": stay_min,
-            "stay_max": stay_max,
-            "target_price": target_price,
-            "notifications": notifications,
-            "email": email,
-            "history": []
-        }
-        ensure_route_fields(r)
-        routes.append(r)
-        save_routes(routes)
-        st.success(f"Suivi ajouté pour {origin} → {destination}")
+        if submit:
+            new_route = {
+                "id": str(uuid.uuid4()),
+                "origin": origin,
+                "destination": destination,
+                "departure": departure.isoformat(),
+                "stay_min": stay_min,
+                "stay_max": stay_max,
+                "target_price": target_price,
+                "direct_only": direct_only,
+                "notifications": notifications,
+                "email": email,
+                "history": []
+            }
+            ensure_route_fields(new_route)
+            routes.append(new_route)
+            save_routes(routes)
+            st.success("Suivi ajouté !")
 
-def render_edit_tab(routes):
-    edit_id = st.session_state.get("edit_id")
-    if not edit_id:
-        return
-
-    route = next((r for r in routes if r["id"] == edit_id), None)
-    if not route:
-        st.error("Suivi introuvable")
-        return
-
-    ensure_route_fields(route)
-    st.subheader(f"Éditer suivi {route['origin']} → {route['destination']}")
-    with st.form(f"edit_form_{edit_id}"):
-        origin = st.text_input("Origine", value=route['origin'])
-        destination = st.text_input("Destination", value=route['destination'])
-        departure = st.date_input("Départ", value=datetime.fromisoformat(route['departure']))
-        if route.get('return'):
-            return_date_val = datetime.fromisoformat(route['return'])
-        else:
-            return_date_val = departure + timedelta(days=route.get("stay_max", 1))
-        return_date = st.date_input("Retour (facultatif)", value=return_date_val)
-        stay_min = st.number_input("Durée minimale du séjour (jours)", min_value=1, value=route.get("stay_min",1))
-        stay_max = st.number_input("Durée maximale du séjour (jours)", min_value=1, value=route.get("stay_max",7))
-        target_price = st.number_input("Prix cible (€)", min_value=1.0, value=route.get("target_price",100.0))
-        notifications = st.checkbox("Activer notifications", value=route.get("notifications", False))
+def render_edit_tab(route, routes):
+    st.header("Modifier un suivi")
+    with st.form(f"edit_route_{route['id']}"):
+        origin = st.text_input("Aéroport de départ", value=route.get("origin", ""))
+        destination = st.text_input("Aéroport de destination", value=route.get("destination", ""))
+        departure_val = route.get("departure")
+        departure = st.date_input(
+            "Date de départ",
+            value=datetime.fromisoformat(departure_val) if departure_val else datetime.today()
+        )
+        stay_min = st.number_input("Séjour min (jours)", value=route.get("stay_min",1), min_value=1)
+        stay_max = st.number_input("Séjour max (jours)", value=route.get("stay_max",1), min_value=1)
+        target_price = st.number_input("Prix cible (€)", value=route.get("target_price",100))
+        direct_only = st.checkbox("Vol direct uniquement", value=route.get("direct_only", False))
+        notifications = st.checkbox("Notifications", value=route.get("notifications", False))
         email = st.text_input("Email pour notifications", value=route.get("email",""))
-        save_submit = st.form_submit_button("Sauvegarder")
+        submit = st.form_submit_button("Mettre à jour")
 
-    if save_submit:
-        route.update({
-            "origin": origin,
-            "destination": destination,
-            "departure": departure.isoformat(),
-            "return": return_date.isoformat() if return_date else None,
-            "stay_min": stay_min,
-            "stay_max": stay_max,
-            "target_price": target_price,
-            "notifications": notifications,
-            "email": email
-        })
-        save_routes(routes)
-        st.success("Suivi mis à jour")
-        st.session_state.pop("edit_id")
+        if submit:
+            route.update({
+                "origin": origin,
+                "destination": destination,
+                "departure": departure.isoformat(),
+                "stay_min": stay_min,
+                "stay_max": stay_max,
+                "target_price": target_price,
+                "direct_only": direct_only,
+                "notifications": notifications,
+                "email": email
+            })
+            ensure_route_fields(route)
+            save_routes(routes)
+            st.success("Suivi mis à jour !")
 
 def render_search_tab(routes):
-    st.subheader("Suggestions")
-    df_res = pd.DataFrame([{"id": r["id"], "origin": r["origin"], "destination": r["destination"], "departure": r["departure"]} for r in routes])
-    if df_res.empty:
-        st.info("Pas de suggestions disponibles")
-        return
-
+    st.header("Suggestions de suivi")
+    # Simuler une recherche
+    df_res = [{"id": str(i), "origin": "PAR", "destination": f"City{i}", "departure": "2025-12-01"} for i in range(5)]
     with st.form("add_from_search"):
         selected_ids = st.multiselect(
             "Sélectionner les résultats à ajouter",
-            options=df_res["id"].tolist(),
-            format_func=lambda i: f"{df_res.loc[df_res['id']==i,'origin'].values[0]} → {df_res.loc[df_res['id']==i,'destination'].values[0]} ({df_res.loc[df_res['id']==i,'departure'].values[0]})"
+            options=[r["id"] for r in df_res],
+            format_func=lambda i: f"{df_res[int(i)]['origin']} → {df_res[int(i)]['destination']} ({df_res[int(i)]['departure']})"
         )
         add_submit = st.form_submit_button("Ajouter")
-
-    if add_submit and selected_ids:
-        created = 0
-        for sid in selected_ids:
-            if sid not in [r["id"] for r in routes]:
-                r = next((r for r in routes if r["id"]==sid), None)
-                if r:
-                    routes.append(r)
-                    created += 1
-        save_routes(routes)
-        st.success(f"{created} suivis ajoutés")
+        if add_submit and selected_ids:
+            added = 0
+            for r in df_res:
+                if r["id"] in selected_ids:
+                    new_route = dict(r)
+                    ensure_route_fields(new_route)
+                    routes.append(new_route)
+                    added += 1
+            save_routes(routes)
+            st.success(f"{added} suivis ajoutés !")
