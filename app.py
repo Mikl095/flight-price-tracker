@@ -690,6 +690,7 @@ with tab_config:
     else:
         st.info("Aucun log pour l'instant.")
 
+
 # ============================================================
 # TAB — RECHERCHE & SUGGESTIONS (SIMU)
 # ============================================================
@@ -699,72 +700,9 @@ with tab_search:
     st.write("Simulation de prix selon origines, destinations, date et durée de séjour.")
 
     with st.expander("Paramètres de recherche"):
-        origins_input = st.text_input("Origines (IATA, séparées par ,)", value="PAR,CDG")
-        destinations_input = st.text_input("Destinations (IATA, séparées par ,)", value="NYC,JFK,EWR")
-
-        start_date = st.date_input("Date départ approximative", date.today() + timedelta(days=90))
-        search_window_days = st.number_input("Fenêtre recherche (± jours)", min_value=0, max_value=30, value=7)
-
-        stay_days = st.number_input(
-            "Durée de séjour (jours)",
-            min_value=1,
-            max_value=60,
-            value=7,
-            help="Si aucune date de retour n'est fournie, la durée de séjour sera utilisée."
-        )
-
-        return_date_opt = st.date_input(
-            "Date retour (optionnelle)",
-            value=None,
-            help="Laisse vide pour utiliser uniquement la durée de séjour."
-        )
-
-        samples_per_option = st.number_input(
-            "Échantillons par combinaison",
-            min_value=3,
-            max_value=30,
-            value=8
-        )
-
-        if st.button("Lancer la recherche (simulation)"):
-
-            origins = [o.strip().upper() for o in origins_input.split(",") if o.strip()]
-            dests = [d.strip().upper() for d in destinations_input.split(",") if d.strip()]
-
-            results = []
-
-            for origin in origins:
-                for dest in dests:
-
-                    for delta in range(-search_window_days, search_window_days + 1):
-                        dep = start_date + timedelta(days=delta)
-
-                        # -------------------------
-                        # Return date logic
-                        # -------------------------
-                        if return_date_opt is None:
-                            ret = dep + timedelta(days=int(stay_days))  # priorité séjour
-                        else:
-                            ret = return_date_opt
-                            # stay_days is deduced for display
-                            stay_days_value = (ret - dep).days
-                        # -------------------------
-
-                        for _ in range(samples_per_option):
-                            price = random.randint(120, 1200)
-                            results.append({
-                                "origin": origin,
-                                "destination": dest,
-                                "departure": dep.isoformat(),
-                                "return": ret.isoformat(),
-                                "stay_days": int(stay_days),
-                                "price": price
-                            })
-
-            df_res = pd.DataFrame(results)
-            st.session_state["last_search"] = df_res
-
-            st.success(f"Simulation terminée : {len(df_res)} résultats générés.")
+        ...
+        (ton code inchangé)
+        ...
 
     # -------------------------
     # Display results
@@ -782,106 +720,96 @@ with tab_search:
 
         st.markdown("---")
 
-# ==========================================================
-#  ➕ Ajouter un résultat comme suivi
-#  (n'apparaît que si une recherche existe)
-# ==========================================================
+        # ==========================================================
+        #  ➕ Ajouter un résultat comme suivi  ✅ (désormais dans l’onglet)
+        # ==========================================================
 
-if "last_search" in st.session_state:
+        st.subheader("➕ Ajouter un des résultats comme suivi")
 
-    df_res = st.session_state["last_search"]
+        with st.form("add_from_search"):
+            sel_idx = st.number_input(
+                "Index résultat à ajouter",
+                min_value=0,
+                max_value=max(0, len(df_res) - 1),
+                value=0
+            )
+            add_submit = st.form_submit_button("Ajouter")
 
-    st.subheader("➕ Ajouter un des résultats comme suivi")
+        if add_submit:
+            row = df_res.iloc[int(sel_idx)]
 
-    with st.form("add_from_search"):
-        sel_idx = st.number_input(
-            "Index résultat à ajouter",
-            min_value=0,
-            max_value=max(0, len(df_res) - 1),
-            value=0
-        )
-        add_submit = st.form_submit_button("Ajouter")
+            dep_dt = safe_iso_to_datetime(row["departure"])
+            if dep_dt:
+                return_iso = (dep_dt + timedelta(days=int(row["stay_days"]))).date().isoformat()
+            else:
+                return_iso = None
 
-    if add_submit:
+            import numpy as np
+            import pandas as pd
+            from datetime import date, datetime
 
-        row = df_res.iloc[int(sel_idx)]
+            def json_safe(v):
+                if v is None:
+                    return None
+                if isinstance(v, np.generic):
+                    return v.item()
+                if isinstance(v, float) and np.isnan(v):
+                    return None
+                if v is pd.NA or v is pd.NaT:
+                    return None
+                if isinstance(v, pd.Timestamp):
+                    return v.isoformat()
+                if isinstance(v, (date, datetime)):
+                    return v.isoformat()
+                return v
 
-        # --- Compute return date ---
-        dep_dt = safe_iso_to_datetime(row["departure"])
-        if dep_dt:
-            return_iso = (dep_dt + timedelta(days=int(row["stay_days"]))).date().isoformat()
-        else:
-            return_iso = None
+            def sanitize_dict(d):
+                out = {}
+                for k, v in d.items():
+                    if isinstance(v, list):
+                        out[k] = [json_safe(x) for x in v]
+                    elif isinstance(v, dict):
+                        out[k] = sanitize_dict(v)
+                    else:
+                        out[k] = json_safe(v)
+                return out
 
-        # --- Sanitizers (JSON-safe) ---
-        import numpy as np
-        import pandas as pd
-        from datetime import date, datetime
+            new = {
+                "id": str(uuid.uuid4()),
+                "origin": row["origin"],
+                "destination": row["destination"],
+                "departure": row["departure"],
+                "departure_flex_days": 0,
+                "return": return_iso,
+                "return_flex_days": 0,
+                "return_airport": None,
+                "stay_min": int(row["stay_days"]),
+                "stay_max": int(row["stay_days"]),
+                "target_price": float(json_safe(row["price"]) * 0.9),
+                "tracking_per_day": 2,
+                "notifications": False,
+                "email": "",
+                "min_bags": 0,
+                "direct_only": False,
+                "max_stops": "any",
+                "avoid_airlines": [],
+                "preferred_airlines": [],
+                "history": [
+                    {"date": datetime.now().isoformat(), "price": int(json_safe(row["price"]))}
+                ],
+                "last_tracked": datetime.now().isoformat(),
+                "stats": {}
+            }
 
-        def json_safe(v):
-            if v is None:
-                return None
-            if isinstance(v, np.generic):
-                return v.item()
-            if isinstance(v, float) and np.isnan(v):
-                return None
-            if v is pd.NA or v is pd.NaT:
-                return None
-            if isinstance(v, pd.Timestamp):
-                return v.isoformat()
-            if isinstance(v, (date, datetime)):
-                return v.isoformat()
-            return v
+            new = sanitize_dict(new)
 
-        def sanitize_dict(d):
-            out = {}
-            for k, v in d.items():
-                if isinstance(v, list):
-                    out[k] = [json_safe(x) for x in v]
-                elif isinstance(v, dict):
-                    out[k] = sanitize_dict(v)
-                else:
-                    out[k] = json_safe(v)
-            return out
+            routes.append(new)
+            save_routes(routes)
 
-        # --- Build route ---
-        new = {
-            "id": str(uuid.uuid4()),
-            "origin": row["origin"],
-            "destination": row["destination"],
-            "departure": row["departure"],
-            "departure_flex_days": 0,
-            "return": return_iso,
-            "return_flex_days": 0,
-            "return_airport": None,
-            "stay_min": int(row["stay_days"]),
-            "stay_max": int(row["stay_days"]),
-            "target_price": float(json_safe(row["price"]) * 0.9),
-            "tracking_per_day": 2,
-            "notifications": False,
-            "email": "",
-            "min_bags": 0,
-            "direct_only": False,
-            "max_stops": "any",
-            "avoid_airlines": [],
-            "preferred_airlines": [],
-            "history": [
-                {"date": datetime.now().isoformat(), "price": int(json_safe(row["price"]))}
-            ],
-            "last_tracked": datetime.now().isoformat(),
-            "stats": {}
-        }
-
-        new = sanitize_dict(new)
-
-        routes.append(new)
-        save_routes(routes)
-
-        append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
-        st.success("Suivi ajouté depuis les suggestions ✔")
-        st.rerun()
-
-
+            append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+            st.success("Suivi ajouté depuis les suggestions ✔")
+            st.rerun()
+        
 
 # ============================================================
 # END OF APP
