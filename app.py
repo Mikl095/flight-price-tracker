@@ -385,33 +385,48 @@ import io
 st.sidebar.header("⬇️ Export")
 export_choice = st.sidebar.selectbox("Format d'export", ["CSV","XLSX","PDF"])
 
-# helper util to handle different exporter return types
+# helper util to handle different exporter return types (updated)
+import io
+import os
+
 def _handle_export_result(res, default_fname):
     """
-    Accepts:
-      - res: either a path string, bytes, or a BytesIO-like object
-      - default_fname: fallback filename (string)
-    Returns tuple (data_bytes, filename)
+    Accept:
+      - res: tuple (bytes, filename) OR path string OR bytes OR BytesIO
+      - default_fname: fallback filename
+    Returns (data_bytes, filename) or (None, filename) if cannot extract.
     """
-    # If exporter returned a path (string)
-    if isinstance(res, str):
-        # read file bytes
-        with open(res, "rb") as f:
-            data = f.read()
-        return data, os.path.basename(res)
+    # case: (bytes, filename)
+    if isinstance(res, tuple) and len(res) == 2:
+        data, name = res
+        if isinstance(data, (bytes, bytearray)):
+            return bytes(data), name or default_fname
+        if isinstance(data, io.BytesIO):
+            return data.getvalue(), name or default_fname
+        # if data is str (path) inside tuple, try to read
+        if isinstance(data, str) and os.path.exists(data):
+            with open(data, "rb") as f:
+                return f.read(), name or os.path.basename(data)
+        return None, name or default_fname
 
-    # If exporter returned bytes
+    # case: path string
+    if isinstance(res, str):
+        try:
+            with open(res, "rb") as f:
+                return f.read(), os.path.basename(res)
+        except Exception:
+            return None, default_fname
+
+    # case: bytes / bytearray
     if isinstance(res, (bytes, bytearray)):
         return bytes(res), default_fname
 
-    # If exporter returned a file-like buffer (BytesIO)
+    # case: BytesIO-like
     if isinstance(res, io.BytesIO):
         return res.getvalue(), default_fname
 
-    # If exporter returned None (but wrote file to disk with given filename param)
-    # We expect caller used explicit filename and exporter wrote it.
-    # In that case, caller should pass the filename; here we fallback to default_fname (not ideal).
     return None, default_fname
+
 
 # EXPORT - bouton global
 st.sidebar.subheader("Exporter TOUS les suivis")
