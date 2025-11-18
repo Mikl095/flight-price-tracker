@@ -775,20 +775,24 @@ with tab_search:
 
 # --- Force JSON-safe types ---
 def json_safe(v):
+    if v is None:
+        return None
     if hasattr(v, "item"):      # numpy types
         return v.item()
     if hasattr(v, "isoformat"): # datetime.date
         return v.isoformat()
     return v
 
+# Convertit toutes les valeurs du dict
 new = {k: json_safe(v) for k, v in new.items()}
-            
-            routes.append(new)
-            save_routes(routes)
-            append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
 
-            st.success("Suivi ajouté depuis les suggestions ✔")
-            st.rerun()
+routes.append(new)
+save_routes(routes)
+append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+
+st.success("Suivi ajouté depuis les suggestions ✔")
+st.rerun()
+
 
 # ============================================================
 # END OF APP
