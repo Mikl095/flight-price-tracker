@@ -12,7 +12,6 @@ ROUTES_FILE = os.path.join(DATA_DIR, "routes.json")
 EMAIL_CFG_FILE = os.path.join(DATA_DIR, "email_config.json")
 LOG_FILE = os.path.join(DATA_DIR, "last_updates.log")
 
-
 def _atomic_write(path: str, data_bytes: bytes):
     tmp = f"{path}.tmp"
     with open(tmp, "wb") as f:
@@ -20,7 +19,6 @@ def _atomic_write(path: str, data_bytes: bytes):
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
-
 
 def ensure_data_file():
     if not os.path.exists(ROUTES_FILE):
@@ -33,7 +31,6 @@ def ensure_data_file():
     if not os.path.exists(LOG_FILE):
         open(LOG_FILE, "a").close()
 
-
 def load_routes() -> List[Dict[str, Any]]:
     try:
         with open(ROUTES_FILE, "r", encoding="utf-8") as f:
@@ -42,19 +39,11 @@ def load_routes() -> List[Dict[str, Any]]:
                 return data
             return []
     except Exception:
-        try:
-            ts = datetime.now().strftime("%Y%m%d%H%M%S")
-            bad = f"{ROUTES_FILE}.broken.{ts}"
-            os.replace(ROUTES_FILE, bad)
-        except Exception:
-            pass
         return []
-
 
 def save_routes(routes: List[Dict[str, Any]]):
     b = json.dumps(routes, ensure_ascii=False, indent=2).encode("utf-8")
     _atomic_write(ROUTES_FILE, b)
-
 
 def load_email_config() -> dict:
     try:
@@ -64,11 +53,9 @@ def load_email_config() -> dict:
     except Exception:
         return {}
 
-
 def save_email_config(cfg: dict):
     b = json.dumps(cfg, ensure_ascii=False, indent=2).encode("utf-8")
     _atomic_write(EMAIL_CFG_FILE, b)
-
 
 def append_log(line: str):
     try:
@@ -76,7 +63,6 @@ def append_log(line: str):
             f.write(line.rstrip("\n") + "\n")
     except Exception:
         pass
-
 
 def count_updates_last_24h(route: dict) -> int:
     now = datetime.now()
@@ -87,16 +73,12 @@ def count_updates_last_24h(route: dict) -> int:
         if not d:
             continue
         try:
-            if isinstance(d, (int, float)):
-                dt = datetime.fromtimestamp(d)
-            else:
-                dt = datetime.fromisoformat(str(d))
+            dt = datetime.fromisoformat(str(d)) if not isinstance(d, (int, float)) else datetime.fromtimestamp(d)
             if dt >= cutoff:
                 cnt += 1
         except Exception:
             continue
     return cnt
-
 
 def ensure_route_fields(r: dict):
     r.setdefault("id", "")
@@ -122,6 +104,9 @@ def ensure_route_fields(r: dict):
     r.setdefault("last_tracked", None)
     r.setdefault("stats", {})
 
+def increment_route_stat(r: dict, key: str, amount: int = 1):
+    r.setdefault("stats", {})
+    r["stats"][key] = r["stats"].get(key, 0) + amount
 
 def json_safe(v):
     if v is None:
@@ -137,7 +122,6 @@ def json_safe(v):
     if isinstance(v, (date, datetime)):
         return v.isoformat()
     return v
-
 
 def sanitize_dict(d):
     out = {}
