@@ -62,12 +62,15 @@ def count_updates_last_24h(route: dict) -> int:
     now = datetime.now()
     cutoff = now - timedelta(hours=24)
     cnt = 0
-    for h in route.get("history", []) or []:
+    for h in route.get("history", []):
         d = h.get("date")
         if not d:
             continue
         try:
-            dt = datetime.fromisoformat(str(d)) if not isinstance(d, (int, float)) else datetime.fromtimestamp(d)
+            if isinstance(d, (int,float)):
+                dt = datetime.fromtimestamp(d)
+            else:
+                dt = datetime.fromisoformat(str(d))
             if dt >= cutoff:
                 cnt += 1
         except Exception:
@@ -117,7 +120,7 @@ def sanitize_dict(d):
     out = {}
     for k, v in d.items():
         if isinstance(v, list):
-            out[k] = [json_safe(x) for x in v]
+            out[k] = [json_safe(x) if not isinstance(x, dict) else sanitize_dict(x) for x in v]
         elif isinstance(v, dict):
             out[k] = sanitize_dict(v)
         else:
