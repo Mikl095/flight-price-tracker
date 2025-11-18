@@ -1,76 +1,157 @@
+# utils/forms.py
+from datetime import datetime, date, timedelta
+import uuid
 import streamlit as st
-from datetime import date
 
-# ---------------------------------------------------------
-#  FORMULAIRE : CREATION D’UN NOUVEAU SUIVI
-# ---------------------------------------------------------
-def route_form_empty():
-    st.subheader("🆕 Ajouter un suivi")
+def add_route_form(routes, save_routes, append_log):
+    """Render the Add-route form and handle submission."""
+    st.header("➕ Ajouter un suivi")
 
-    origin = st.text_input("Origine (IATA)", value="PAR")
-    origin = origin.upper() if origin else ""
+    with st.form("form_add_new"):
+        origins = st.text_area("Origines (IATA, séparées par ,)", value="PAR")
+        destinations = st.text_area("Destinations (IATA, séparées par ,)", value="TYO")
 
-    destination = st.text_input("Destination (IATA)", value="TYO")
-    destination = destination.upper() if destination else ""
+        departure_date = st.date_input("Date départ (approx.)", date.today() + timedelta(days=90))
+        dep_flex = st.number_input("Plage départ ± jours", min_value=0, max_value=30, value=1)
 
-    departure = st.date_input("Date de départ", value=date.today())
+        return_date = st.date_input("Date retour (optionnelle)", value=None)
+        return_flex = st.number_input("Plage retour ± jours", min_value=0, max_value=30, value=1)
+        return_airport = st.text_input("Aéroport retour (IATA) — vide = même", "")
 
-    stay_days = st.number_input(
-        "Durée sur place (jours)",
-        min_value=1,
-        max_value=60,
-        value=7
-    )
+        priority_stay = st.checkbox("Priorité durée de séjour si pas de date de retour", value=False)
 
-    notify = st.selectbox(
-        "Notifications",
-        ["ON", "OFF"],
-        index=0
-    )
+        stay_min = st.number_input("Séjour min (jours)", min_value=1, max_value=365, value=6)
+        stay_max = st.number_input("Séjour max (jours)", min_value=1, max_value=365, value=10)
 
-    return {
-        "origin": origin,
-        "destination": destination,
-        "departure": departure,
-        "stay_days": stay_days,
-        "notify": notify
-    }
+        target_price = st.number_input("Seuil alerte (€)", min_value=1.0, value=450.0)
+        tracking_per_day = st.number_input("Trackings par jour", min_value=1, max_value=24, value=2)
+        notifications_on = st.checkbox("Activer notifications pour ce suivi", value=True)
+
+        min_bags = st.number_input("Min bagages (préférence)", min_value=0, max_value=5, value=0)
+        direct_only = st.checkbox("Vol direct uniquement (préférence)", value=False)
+        max_stops = st.selectbox("Max escales (préférence)", ["any", 0, 1, 2])
+        avoid_airlines = st.text_input("Compagnies à éviter (IATA, séparées par ,)", value="")
+        preferred_airlines = st.text_input("Compagnies préférées (IATA, séparées par ,)", value="")
+
+        route_email = st.text_input("Email pour ce suivi (vide = email global)", value="")
+
+        add_submit = st.form_submit_button("Ajouter ce suivi")
+
+    if add_submit:
+        created = 0
+        for origin in [o.strip().upper() for o in origins.split(",") if o.strip()]:
+            for destination in [d.strip().upper() for d in destinations.split(",") if d.strip()]:
+                new = {
+                    "id": str(uuid.uuid4()),
+                    "origin": origin,
+                    "destination": destination,
+                    "departure": departure_date.isoformat(),
+                    "departure_flex_days": int(dep_flex),
+                    "return": return_date.isoformat() if return_date else None,
+                    "return_flex_days": int(return_flex),
+                    "priority_stay": bool(priority_stay),
+                    "return_airport": return_airport.upper().strip() if return_airport else None,
+                    "stay_min": int(stay_min),
+                    "stay_max": int(stay_max),
+                    "target_price": float(target_price),
+                    "tracking_per_day": int(tracking_per_day),
+                    "notifications": bool(notifications_on),
+                    "email": route_email.strip(),
+                    "min_bags": int(min_bags),
+                    "direct_only": bool(direct_only),
+                    "max_stops": max_stops,
+                    "avoid_airlines": [a.strip().upper() for a in avoid_airlines.split(",") if a.strip()],
+                    "preferred_airlines": [a.strip().upper() for a in preferred_airlines.split(",") if a.strip()],
+                    "history": [],
+                    "last_tracked": None,
+                    "stats": {}
+                }
+                routes.append(new)
+                append_log(f"{datetime.now().isoformat()} - Added route {new['id']}")
+                created += 1
+
+        save_routes(routes)
+        st.success(f"Suivi(s) ajouté(s) ✔ ({created})")
+        st.rerun()
 
 
-# ---------------------------------------------------------
-#  FORMULAIRE : EDITION D’UN SUIVI EXISTANT
-# ---------------------------------------------------------
-def route_form_from_row(row):
-    st.subheader("✏️ Modifier le suivi")
+def edit_route_form(r, idx, routes, save_routes, append_log, email_cfg):
+    """
+    Render the edit form for a single route.
+    Note: routes, save_routes and append_log are required to persist changes.
+    """
+    with st.expander("✏️ Éditer ce suivi"):
+        with st.form(key=f"dash_form_{r['id']}"):
+            # ROUTE BASE
+            origin_e = st.text_input("Origine (IATA)", value=r.get("origin", ""))
+            dest_e = st.text_input("Destination (IATA)", value=r.get("destination", ""))
 
-    origin = st.text_input("Origine (IATA)", value=row["origin"])
-    origin = origin.upper() if origin else ""
+            # DÉPART
+            try:
+                dep_default = (datetime.fromisoformat(r.get("departure")).date() if r.get("departure") else date.today())
+            except Exception:
+                dep_default = date.today()
 
-    destination = st.text_input("Destination (IATA)", value=row["destination"])
-    destination = destination.upper() if destination else ""
+            departure_e = st.date_input("Date départ", value=dep_default)
+            depflex = st.number_input("Flex départ ± jours", min_value=0, max_value=30, value=int(r.get("departure_flex_days", 0)))
 
-    departure = st.date_input(
-        "Date de départ",
-        value=date.fromisoformat(row["departure"])
-    )
+            # RETOUR
+            try:
+                ret_default = (datetime.fromisoformat(r.get("return")).date() if r.get("return") else (dep_default + timedelta(days=7)))
+            except Exception:
+                ret_default = dep_default + timedelta(days=7)
 
-    stay_days = st.number_input(
-        "Durée sur place (jours)",
-        min_value=1,
-        max_value=60,
-        value=int(row["stay_days"])
-    )
+            return_e = st.date_input("Date retour", value=ret_default)
+            return_flex_e = st.number_input("Flex retour ± jours", min_value=0, max_value=30, value=int(r.get("return_flex_days", 0)))
+            return_airport_e = st.text_input("Aéroport retour (IATA) — vide = même", value=r.get("return_airport") or "")
 
-    notify = st.selectbox(
-        "Notifications",
-        ["ON", "OFF"],
-        index=0 if row["notify"] == "ON" else 1
-    )
+            # SÉJOUR
+            stay_min_e = st.number_input("Séjour min (jours)", min_value=1, max_value=365, value=int(r.get("stay_min", 1)))
+            stay_max_e = st.number_input("Séjour max (jours)", min_value=1, max_value=365, value=int(r.get("stay_max", 1)))
 
-    return {
-        "origin": origin,
-        "destination": destination,
-        "departure": departure,
-        "stay_days": stay_days,
-        "notify": notify
-    }
+            # PRIX / TRACKING
+            target_e = st.number_input("Seuil alerte (€)", min_value=1.0, value=float(r.get("target_price", 100.0)))
+            tracking_pd_e = st.number_input("Trackings par jour", min_value=1, max_value=24, value=int(r.get("tracking_per_day", 1)))
+            notif_e = st.checkbox("Activer notifications pour ce vol", value=bool(r.get("notifications", False)))
+            email_e = st.text_input("Email pour ce suivi (vide = global)", value=r.get("email", ""))
+
+            # PREFERENCES
+            min_bags_e = st.number_input("Min bagages", min_value=0, max_value=5, value=int(r.get("min_bags", 0)))
+            direct_only_e = st.checkbox("Vol direct uniquement", value=r.get("direct_only", False))
+            max_stops_e = st.selectbox("Max escales", ["any", 0, 1, 2], index=["any", 0, 1, 2].index(r.get("max_stops", "any")))
+            avoid_e = st.text_input("Compagnies à éviter (IATA, séparées par ,)", value=",".join(r.get("avoid_airlines", [])))
+            pref_e = st.text_input("Compagnies préférées (IATA, séparées par ,)", value=",".join(r.get("preferred_airlines", [])))
+
+            submit_edit = st.form_submit_button("Enregistrer les modifications")
+
+        if submit_edit:
+            # apply edits
+            r["origin"] = origin_e.upper().strip()
+            r["destination"] = dest_e.upper().strip()
+            r["departure"] = departure_e.isoformat()
+            r["departure_flex_days"] = int(depflex)
+
+            r["return"] = return_e.isoformat()
+            r["return_flex_days"] = int(return_flex_e)
+            r["return_airport"] = return_airport_e.upper().strip() if return_airport_e else None
+
+            r["stay_min"] = int(stay_min_e)
+            r["stay_max"] = int(stay_max_e)
+
+            r["target_price"] = float(target_e)
+            r["tracking_per_day"] = int(tracking_pd_e)
+
+            r["notifications"] = bool(notif_e)
+            r["email"] = email_e.strip()
+
+            r["min_bags"] = int(min_bags_e)
+            r["direct_only"] = bool(direct_only_e)
+            r["max_stops"] = max_stops_e
+
+            r["avoid_airlines"] = [a.strip().upper() for a in avoid_e.split(",") if a.strip()]
+            r["preferred_airlines"] = [a.strip().upper() for a in pref_e.split(",") if a.strip()]
+
+            save_routes(routes)
+            append_log(f"{datetime.now().isoformat()} - Edited route {r['id']}")
+            st.success("Modifications enregistrées.")
+            st.rerun()
