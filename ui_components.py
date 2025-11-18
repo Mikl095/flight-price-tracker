@@ -1,8 +1,9 @@
+# ui_components.py
 import streamlit as st
+import pandas as pd
 from datetime import datetime, date, timedelta
 import random
 import uuid
-import pandas as pd
 from utils.storage import (
     ensure_data_file, load_routes, save_routes,
     load_email_config, save_email_config,
@@ -61,7 +62,7 @@ def render_dashboard(routes, email_cfg, global_notif_enabled):
     st.header("📊 Dashboard — Récapitulatif des suivis")
 
     if not routes:
-        st.info("Aucun suivi pour l'instant. Ajoute un suivi dans l'onglet « Ajouter un suivi ».")
+        st.info("Aucun suivi pour l'instant. Ajoute un suivi dans l'onglet « Ajouter un suivi ».") 
         return
 
     # Summary metrics
@@ -179,11 +180,10 @@ def render_dashboard(routes, email_cfg, global_notif_enabled):
 def render_edit_route(r, routes, email_cfg):
     with st.expander("✏️ Éditer ce suivi"):
         with st.form(key=f"dash_form_{r['id']}"):
-            # BASE
+            # [Tous les champs comme création, flex, bagages, direct, compagnies...]
             origin_e = st.text_input("Origine (IATA)", value=r.get("origin", ""))
             dest_e = st.text_input("Destination (IATA)", value=r.get("destination", ""))
 
-            # DEPART
             dep_dt_default = r.get("departure")
             dep_date_default = date.today()
             try:
@@ -194,7 +194,6 @@ def render_edit_route(r, routes, email_cfg):
             departure_e = st.date_input("Date départ", value=dep_date_default)
             depflex = st.number_input("Flex départ ± jours", min_value=0, max_value=30, value=int(r.get("departure_flex_days",0)))
 
-            # RETOUR
             ret_dt_default = r.get("return")
             return_date_default = None
             if ret_dt_default:
@@ -206,17 +205,14 @@ def render_edit_route(r, routes, email_cfg):
             return_flex_e = st.number_input("Flex retour ± jours", min_value=0, max_value=30, value=int(r.get("return_flex_days",0)))
             priority_stay_e = st.checkbox("Priorité durée de séjour si pas de date de retour", value=r.get("priority_stay", False))
 
-            # SÉJOUR
             stay_min_e = st.number_input("Séjour min (jours)", min_value=1, max_value=365, value=int(r.get("stay_min",1)))
             stay_max_e = st.number_input("Séjour max (jours)", min_value=1, max_value=365, value=int(r.get("stay_max",1)))
 
-            # PRIX / TRACKING
             target_e = st.number_input("Seuil alerte (€)", min_value=1.0, value=float(r.get("target_price",100.0)))
             tracking_pd_e = st.number_input("Trackings par jour", min_value=1, max_value=24, value=int(r.get("tracking_per_day",1)))
             notif_e = st.checkbox("Activer notifications pour ce vol", value=r.get("notifications", False))
             email_e = st.text_input("Email pour ce suivi (vide = global)", value=r.get("email",""))
 
-            # PREFERENCES
             min_bags_e = st.number_input("Min bagages", min_value=0, max_value=5, value=int(r.get("min_bags",0)))
             direct_only_e = st.checkbox("Vol direct uniquement", value=r.get("direct_only",False))
             max_stops_e = st.selectbox("Max escales", ["any",0,1,2], index=["any",0,1,2].index(r.get("max_stops","any")))
