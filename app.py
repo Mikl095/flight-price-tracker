@@ -1,10 +1,6 @@
 # app.py
 import streamlit as st
-from datetime import datetime, date, timedelta
-import uuid
-import random
-import pandas as pd
-
+from utils.storage import load_routes, load_email_config
 from ui_components import (
     render_top_bar,
     render_dashboard,
@@ -12,40 +8,34 @@ from ui_components import (
     render_search_tab,
     render_config_tab
 )
-from utils.storage import (
-    ensure_data_file,
-    load_routes,
-    save_routes,
-    load_email_config,
-    save_email_config,
-    append_log,
-    count_updates_last_24h,
-    ensure_route_fields,
-    sanitize_dict
-)
 
 # -----------------------------
-# INITIALISATION
+# CHARGEMENT DES DONNÉES
 # -----------------------------
-ensure_data_file()
 routes = load_routes()
 email_cfg = load_email_config()
+global_notif_enabled = bool(email_cfg.get("enabled", False))
 
 # -----------------------------
-# UI PRINCIPAL
+# SIDEBAR — Navigation
+# -----------------------------
+st.sidebar.title("🛫 Navigation")
+tabs = ["Dashboard", "Ajouter un suivi", "Recherche/Simulation", "Configuration"]
+active_tab = st.sidebar.radio("Choisir un onglet", tabs)
+
+# -----------------------------
+# TOP BAR (Actions globales / Export)
 # -----------------------------
 render_top_bar(routes, email_cfg)
 
-tab = st.sidebar.radio(
-    "Onglets",
-    ["Dashboard", "Ajouter un suivi", "Recherche / Simulation", "Configuration"]
-)
-
-if tab == "Dashboard":
-    render_dashboard(routes, email_cfg, global_notif_enabled=email_cfg.get("enabled", False))
-elif tab == "Ajouter un suivi":
+# -----------------------------
+# Onglets principaux
+# -----------------------------
+if active_tab == "Dashboard":
+    render_dashboard(routes, email_cfg, global_notif_enabled)
+elif active_tab == "Ajouter un suivi":
     render_add_tab(routes)
-elif tab == "Recherche / Simulation":
+elif active_tab == "Recherche/Simulation":
     render_search_tab(routes)
-elif tab == "Configuration":
+elif active_tab == "Configuration":
     render_config_tab()
