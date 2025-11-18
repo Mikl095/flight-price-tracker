@@ -26,13 +26,31 @@ email_cfg = load_email_config()
 st.set_page_config(page_title="Flight Price Tracker", layout="wide")
 st.title("✈️ Flight Price Tracker — Multi-onglets")
 
-global_notif_enabled = bool(email_cfg.get("enabled", False))
-notif_color = "🟢" if global_notif_enabled else "🔴"
-st.markdown(
-    f"<div style='font-size:18px; margin-bottom:15px;'>{notif_color} "
-    f"<b>Notifications globales : {'ACTIVÉES' if global_notif_enabled else 'DÉSACTIVÉES'}</b></div>",
-    unsafe_allow_html=True
-)
+# -----------------------------
+# TOP BAR — actions globales
+# -----------------------------
+col_top_left, col_top_mid, col_top_right = st.columns([1,2,1])
+
+with col_top_left:
+    if st.button("Mettre à jour tous (simu)"):
+        # simulate a single random price update for each route
+        from datetime import datetime
+        import random
+        changed = False
+        for r in routes:
+            try:
+                price = random.randint(120, 1000)
+                r.setdefault("history", []).append({"date": datetime.now().isoformat(), "price": price})
+                r["last_tracked"] = datetime.now().isoformat()
+                changed = True
+            except Exception:
+                continue
+        if changed:
+            save_routes(routes)
+            append_log(f"{datetime.now().isoformat()} - Bulk update (simu)")
+            st.success("Mise à jour globale simulée ✔")
+            st.rerun()
+
 
 # -----------------------------
 # SIDEBAR / NAV
@@ -360,31 +378,51 @@ elif tab=="Configuration":
         st.success("Configuration enregistrée ✔")
 
 # -----------------------------
-# EXPORT
+# SIDEBAR — Export (séparé: tout / index)
 # -----------------------------
 st.sidebar.header("⬇️ Export")
-export_choice = st.sidebar.selectbox("Format", ["CSV","XLSX","PDF"])
-export_all = st.sidebar.checkbox("Exporter tous les suivis", value=True)
-if st.sidebar.button("Exporter"):
-    if export_all:
-        export_data = routes
-    else:
-        if routes:
-            idx_sel = st.sidebar.number_input("Index du suivi à exporter", min_value=0, max_value=len(routes)-1, value=0)
-            export_data = [routes[idx_sel]]
-        else:
-            export_data = []
-    if export_data:
-        filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_choice.lower()}"
+
+# choix du format
+export_choice = st.sidebar.selectbox("Format d'export", ["CSV","XLSX","PDF"])
+
+# EXPORT - bouton global
+st.sidebar.subheader("Exporter TOUS les suivis")
+if st.sidebar.button("Exporter tout"):
+    if routes:
+        fname = f"export_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_choice.lower()}"
         try:
-            if export_choice=="CSV":
-                export_csv(export_data, filename)
-            elif export_choice=="XLSX":
-                export_xlsx(export_data, filename)
-            elif export_choice=="PDF":
-                export_pdf(export_data, filename)
-            st.success(f"Export généré : {filename}")
+            if export_choice == "CSV":
+                export_csv(routes, fname)
+            elif export_choice == "XLSX":
+                export_xlsx(routes, fname)
+            elif export_choice == "PDF":
+                export_pdf(routes, fname)
+            st.sidebar.success(f"Export global généré : {fname}")
         except Exception as e:
-            st.error(f"Erreur export : {e}")
+            st.sidebar.error(f"Erreur lors de l'export global : {e}")
     else:
-        st.warning("Aucun suivi à exporter.")
+        st.sidebar.warning("Aucun suivi à exporter.")
+
+st.sidebar.markdown("---")
+
+# EXPORT - par index (suivi individuel)
+st.sidebar.subheader("Exporter un suivi (index)")
+if routes:
+    max_idx = len(routes) - 1
+    idx_sel = st.sidebar.number_input("Index du suivi à exporter", min_value=0, max_value=max_idx, value=0)
+    if st.sidebar.button("Exporter suivi sélectionné"):
+        try:
+            route_to_export = [routes[int(idx_sel)]]
+            fname = f"export_{route_to_export[0]['id'][:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_choice.lower()}"
+            if export_choice == "CSV":
+                export_csv(route_to_export, fname)
+            elif export_choice == "XLSX":
+                export_xlsx(route_to_export, fname)
+            elif export_choice == "PDF":
+                export_pdf(route_to_export, fname)
+            st.sidebar.success(f"Export du suivi {idx_sel} généré : {fname}")
+        except Exception as e:
+            st.sidebar.error(f"Erreur export suivi {idx_sel} : {e}")
+else:
+    st.sidebar.info("Aucun suivi disponible.")
+
