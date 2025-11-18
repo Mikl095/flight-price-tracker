@@ -132,3 +132,35 @@ def ensure_route_fields(r: dict):
     r.setdefault("history", [])
     r.setdefault("last_tracked", None)
     r.setdefault("stats", {})
+
+import numpy as np
+import pandas as pd
+from datetime import date, datetime
+
+def json_safe(v):
+    """Convert any value into a JSON-serializable type."""
+    if v is None:
+        return None
+    if isinstance(v, np.generic):
+        return v.item()
+    if isinstance(v, float) and np.isnan(v):
+        return None
+    if v is pd.NA or v is pd.NaT:
+        return None
+    if isinstance(v, pd.Timestamp):
+        return v.isoformat()
+    if isinstance(v, (date, datetime)):
+        return v.isoformat()
+    return v
+
+def sanitize_dict(d):
+    """Recursively sanitize any dict for JSON writing."""
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, list):
+            out[k] = [json_safe(x) for x in v]
+        elif isinstance(v, dict):
+            out[k] = sanitize_dict(v)
+        else:
+            out[k] = json_safe(v)
+    return out
