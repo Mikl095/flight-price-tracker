@@ -28,7 +28,7 @@ with col1:
             r["last_tracked"] = datetime.now().isoformat()
         save_routes(routes)
         st.success("Tous mis à jour (simu).")
-        st.experimental_rerun()
+        st.rerun()
 
 with col2:
     st.markdown("**Recherche & comparateur (simulation)** — comparer plusieurs origines/destinations et trouver les dates moins chères.")
@@ -149,7 +149,7 @@ else:
                     r["last_tracked"] = datetime.now().isoformat()
                     save_routes(routes)
                     append_log(f"{datetime.now().isoformat()} - Manual update {r['id']} price={price}")
-                    st.experimental_rerun()
+                    st.rerun()
                 if st.button("Test mail", key=f"tm_{idx}"):
                     rcpt = r.get("email") or email_cfg.get("email", "")
                     if not rcpt:
@@ -197,4 +197,4 @@ else:
                     save_routes(routes)
                     append_log(f"{datetime.now().isoformat()} - Edited {r['id']}")
                     st.success("Modifications enregistrées.")
-                    st.experimental_rerun()
+                    st.rerun()
