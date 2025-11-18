@@ -1,17 +1,17 @@
 # ui_components.py
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date, timedelta
 import random
 import uuid
+from datetime import datetime, date, timedelta
 from utils.storage import (
-    ensure_data_file, load_routes, save_routes,
-    load_email_config, save_email_config,
+    load_routes, save_routes, load_email_config, save_email_config,
     append_log, count_updates_last_24h, ensure_route_fields, sanitize_dict
 )
 from utils.plotting import plot_price_history
 from exporters import export_csv, export_pdf, export_xlsx
 from email_utils import send_email
+
 
 # -----------------------------
 # TOP BAR
@@ -180,66 +180,57 @@ def render_dashboard(routes, email_cfg, global_notif_enabled):
 def render_edit_route(r, routes, email_cfg):
     with st.expander("✏️ Éditer ce suivi"):
         with st.form(key=f"dash_form_{r['id']}"):
-            # [Tous les champs comme création, flex, bagages, direct, compagnies...]
             origin_e = st.text_input("Origine (IATA)", value=r.get("origin", ""))
             dest_e = st.text_input("Destination (IATA)", value=r.get("destination", ""))
-
-            dep_dt_default = r.get("departure")
-            dep_date_default = date.today()
+            dep_dt_default = date.today()
             try:
-                dep_dt_default = datetime.fromisoformat(dep_dt_default)
-                dep_date_default = dep_dt_default.date()
-            except Exception:
-                pass
-            departure_e = st.date_input("Date départ", value=dep_date_default)
+                if r.get("departure"):
+                    dep_dt_default = datetime.fromisoformat(r["departure"]).date()
+            except: pass
+            departure_e = st.date_input("Date départ", value=dep_dt_default)
             depflex = st.number_input("Flex départ ± jours", min_value=0, max_value=30, value=int(r.get("departure_flex_days",0)))
-
-            ret_dt_default = r.get("return")
             return_date_default = None
-            if ret_dt_default:
-                try:
-                    return_date_default = datetime.fromisoformat(ret_dt_default).date()
-                except Exception:
-                    pass
+            try:
+                if r.get("return"):
+                    return_date_default = datetime.fromisoformat(r["return"]).date()
+            except: pass
             return_e = st.date_input("Date retour (optionnelle)", value=return_date_default)
             return_flex_e = st.number_input("Flex retour ± jours", min_value=0, max_value=30, value=int(r.get("return_flex_days",0)))
             priority_stay_e = st.checkbox("Priorité durée de séjour si pas de date de retour", value=r.get("priority_stay", False))
-
             stay_min_e = st.number_input("Séjour min (jours)", min_value=1, max_value=365, value=int(r.get("stay_min",1)))
             stay_max_e = st.number_input("Séjour max (jours)", min_value=1, max_value=365, value=int(r.get("stay_max",1)))
-
             target_e = st.number_input("Seuil alerte (€)", min_value=1.0, value=float(r.get("target_price",100.0)))
             tracking_pd_e = st.number_input("Trackings par jour", min_value=1, max_value=24, value=int(r.get("tracking_per_day",1)))
             notif_e = st.checkbox("Activer notifications pour ce vol", value=r.get("notifications", False))
             email_e = st.text_input("Email pour ce suivi (vide = global)", value=r.get("email",""))
-
             min_bags_e = st.number_input("Min bagages", min_value=0, max_value=5, value=int(r.get("min_bags",0)))
             direct_only_e = st.checkbox("Vol direct uniquement", value=r.get("direct_only",False))
             max_stops_e = st.selectbox("Max escales", ["any",0,1,2], index=["any",0,1,2].index(r.get("max_stops","any")))
             avoid_e = st.text_input("Compagnies à éviter (IATA, séparées par ,)", value=",".join(r.get("avoid_airlines",[])))
             pref_e = st.text_input("Compagnies préférées (IATA, séparées par ,)", value=",".join(r.get("preferred_airlines",[])))
-
             submit_edit = st.form_submit_button("Enregistrer les modifications")
 
         if submit_edit:
-            r["origin"] = origin_e.upper().strip()
-            r["destination"] = dest_e.upper().strip()
-            r["departure"] = departure_e.isoformat()
-            r["departure_flex_days"] = int(depflex)
-            r["return"] = return_e.isoformat() if return_e else None
-            r["return_flex_days"] = int(return_flex_e)
-            r["priority_stay"] = bool(priority_stay_e)
-            r["stay_min"] = int(stay_min_e)
-            r["stay_max"] = int(stay_max_e)
-            r["target_price"] = float(target_e)
-            r["tracking_per_day"] = int(tracking_pd_e)
-            r["notifications"] = bool(notif_e)
-            r["email"] = email_e.strip()
-            r["min_bags"] = int(min_bags_e)
-            r["direct_only"] = bool(direct_only_e)
-            r["max_stops"] = max_stops_e
-            r["avoid_airlines"] = [a.strip().upper() for a in avoid_e.split(",") if a.strip()]
-            r["preferred_airlines"] = [a.strip().upper() for a in pref_e.split(",") if a.strip()]
+            r.update({
+                "origin": origin_e.upper().strip(),
+                "destination": dest_e.upper().strip(),
+                "departure": departure_e.isoformat(),
+                "departure_flex_days": int(depflex),
+                "return": return_e.isoformat() if return_e else None,
+                "return_flex_days": int(return_flex_e),
+                "priority_stay": bool(priority_stay_e),
+                "stay_min": int(stay_min_e),
+                "stay_max": int(stay_max_e),
+                "target_price": float(target_e),
+                "tracking_per_day": int(tracking_pd_e),
+                "notifications": bool(notif_e),
+                "email": email_e.strip(),
+                "min_bags": int(min_bags_e),
+                "direct_only": bool(direct_only_e),
+                "max_stops": max_stops_e,
+                "avoid_airlines": [a.strip().upper() for a in avoid_e.split(",") if a.strip()],
+                "preferred_airlines": [a.strip().upper() for a in pref_e.split(",") if a.strip()],
+            })
             save_routes(routes)
             append_log(f"{datetime.now().isoformat()} - Edited route {r['id']}")
             st.success("Modifications enregistrées.")
@@ -247,7 +238,7 @@ def render_edit_route(r, routes, email_cfg):
 
 
 # -----------------------------
-# TAB AJOUT
+# ADD TAB
 # -----------------------------
 def render_add_tab(routes):
     st.header("➕ Ajouter un suivi")
@@ -309,22 +300,12 @@ def render_add_tab(routes):
 
 
 # -----------------------------
-# SEARCH & SUGGESTIONS
+# SEARCH / SIMULATION
 # -----------------------------
 def render_search_tab(routes):
-    import streamlit as st
-    import pandas as pd
-    import random
-    from datetime import date, datetime, timedelta
-    import uuid
-    from utils.storage import save_routes, append_log, sanitize_dict
-
     st.header("🔎 Recherche & Suggestions (Simulation)")
     st.write("Simulation de prix selon origines, destinations, date et durée de séjour.")
 
-    # -------------------------
-    # PARAMÈTRES DE RECHERCHE
-    # -------------------------
     with st.expander("Paramètres de recherche"):
         origins_input = st.text_input("Origines (IATA, séparées par ,)", value="PAR,CDG")
         destinations_input = st.text_input("Destinations (IATA, séparées par ,)", value="NYC,JFK,EWR")
@@ -365,9 +346,6 @@ def render_search_tab(routes):
         top10 = df_res.sort_values("price").head(10).reset_index(drop=True)
         st.table(top10[["origin","destination","departure","return","stay_days","price"]])
 
-        # -------------------------
-        # Ajouter un ou plusieurs résultats comme suivi
-        # -------------------------
         st.subheader("➕ Ajouter un ou plusieurs résultats comme suivi (Top 10 uniquement)")
         st.write("Indiquez les indices (0 à 9) séparés par des virgules, correspondant aux lignes du top 10.")
         ids_input = st.text_input("Indices à ajouter (ex: 0,2,5)")
@@ -382,7 +360,6 @@ def render_search_tab(routes):
                             row = top10.iloc[idx]
                             dep_dt = datetime.fromisoformat(row["departure"])
                             return_iso = (datetime.fromisoformat(row["return"]).date().isoformat() if row["return"] else None)
-
                             new = {
                                 "id": str(uuid.uuid4()),
                                 "origin": row["origin"],
@@ -416,7 +393,6 @@ def render_search_tab(routes):
                     st.error(f"Erreur dans la saisie des indices : {e}")
             else:
                 st.warning("Veuillez entrer au moins un indice.")
-
 
 
 # -----------------------------
