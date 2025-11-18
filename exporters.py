@@ -1,99 +1,119 @@
 # exporters.py
 import pandas as pd
+from matplotlib import pyplot as plt
+from io import BytesIO
 from fpdf import FPDF
-import xlsxwriter
-from datetime import datetime
+import openpyxl
+from utils.plotting import plot_price_history
 
 # -----------------------------
-# CSV
+# EXPORT CSV
 # -----------------------------
-def export_csv(routes, path="export.csv"):
-    rows = []
+def export_csv(routes, path="export.csv", route_id=None):
+    data = []
     for r in routes:
+        if route_id and r.get("id") != route_id:
+            continue
         last_price = r.get("history")[-1]["price"] if r.get("history") else None
-        rows.append({
-            "ID": r.get("id"),
-            "Origin": r.get("origin"),
-            "Destination": r.get("destination"),
-            "Departure": r.get("departure"),
-            "Return": r.get("return"),
-            "Stay Min": r.get("stay_min"),
-            "Stay Max": r.get("stay_max"),
-            "Target Price": r.get("target_price"),
-            "Last Price": last_price,
-            "Notifications": r.get("notifications"),
-            "Email": r.get("email"),
-            "Travel Class": r.get("travel_class", "Economy"),
-            "Min Bags": r.get("min_bags"),
-            "Direct Only": r.get("direct_only"),
-            "Max Stops": r.get("max_stops"),
-            "Avoid Airlines": ",".join(r.get("avoid_airlines", [])),
-            "Preferred Airlines": ",".join(r.get("preferred_airlines", [])),
-            "Last Tracked": r.get("last_tracked")
+        min_price = min((h["price"] for h in r.get("history", [])), default=None)
+        data.append({
+            "id": r.get("id"),
+            "origin": r.get("origin"),
+            "destination": r.get("destination"),
+            "departure": r.get("departure"),
+            "return": r.get("return"),
+            "stay_min": r.get("stay_min"),
+            "stay_max": r.get("stay_max"),
+            "last_price": last_price,
+            "min_price": min_price,
+            "target_price": r.get("target_price"),
+            "notifications": r.get("notifications"),
+            "email": r.get("email"),
+            "travel_class": r.get("travel_class"),
+            "tracking_per_day": r.get("tracking_per_day"),
         })
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(data)
     df.to_csv(path, index=False)
     return path
 
 # -----------------------------
-# XLSX
+# EXPORT XLSX
 # -----------------------------
-def export_xlsx(routes, path="export.xlsx"):
-    rows = []
+def export_xlsx(routes, path="export.xlsx", route_id=None):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Suivis"
+
+    headers = [
+        "ID","Origin","Destination","Departure","Return","Stay Min","Stay Max",
+        "Last Price","Min Price","Target Price","Notifications","Email","Class","Tracking/Day"
+    ]
+    ws.append(headers)
+
     for r in routes:
+        if route_id and r.get("id") != route_id:
+            continue
         last_price = r.get("history")[-1]["price"] if r.get("history") else None
-        rows.append({
-            "ID": r.get("id"),
-            "Origin": r.get("origin"),
-            "Destination": r.get("destination"),
-            "Departure": r.get("departure"),
-            "Return": r.get("return"),
-            "Stay Min": r.get("stay_min"),
-            "Stay Max": r.get("stay_max"),
-            "Target Price": r.get("target_price"),
-            "Last Price": last_price,
-            "Notifications": r.get("notifications"),
-            "Email": r.get("email"),
-            "Travel Class": r.get("travel_class", "Economy"),
-            "Min Bags": r.get("min_bags"),
-            "Direct Only": r.get("direct_only"),
-            "Max Stops": r.get("max_stops"),
-            "Avoid Airlines": ",".join(r.get("avoid_airlines", [])),
-            "Preferred Airlines": ",".join(r.get("preferred_airlines", [])),
-            "Last Tracked": r.get("last_tracked")
-        })
-    df = pd.DataFrame(rows)
-    writer = pd.ExcelWriter(path, engine='xlsxwriter')
-    df.to_excel(writer, index=False, sheet_name='Routes')
-    writer.save()
+        min_price = min((h["price"] for h in r.get("history", [])), default=None)
+        row = [
+            r.get("id"), r.get("origin"), r.get("destination"),
+            r.get("departure"), r.get("return"),
+            r.get("stay_min"), r.get("stay_max"),
+            last_price, min_price,
+            r.get("target_price"), r.get("notifications"),
+            r.get("email"), r.get("travel_class"), r.get("tracking_per_day")
+        ]
+        ws.append(row)
+
+    # Ajouter feuille pour graphes
+    ws_graph = wb.create_sheet("Graphs")
+    for r in routes:
+        if route_id and r.get("id") != route_id:
+            continue
+        fig = plot_price_history(r.get("history", []))
+        img_bytes = BytesIO()
+        fig.savefig(img_bytes, format='png')
+        plt.close(fig)
+        img_bytes.seek(0)
+        img = openpyxl.drawing.image.Image(img_bytes)
+        img.anchor = 'A1'
+        ws_graph.add_image(img)
+    wb.save(path)
     return path
 
 # -----------------------------
-# PDF
+# EXPORT PDF
 # -----------------------------
-def export_pdf(routes, path="export.pdf"):
+def export_pdf(routes, path="export.pdf", route_id=None):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(0, 10, "Flight Price Tracker Export", ln=True, align="C")
-    pdf.ln(5)
 
-    pdf.set_font("Arial", "", 10)
     for r in routes:
-        pdf.multi_cell(0, 5, (
-            f"ID: {r.get('id')}\n"
-            f"Origin → Destination: {r.get('origin')} → {r.get('destination')}\n"
-            f"Departure: {r.get('departure')} | Return: {r.get('return')}\n"
-            f"Stay: {r.get('stay_min')}–{r.get('stay_max')} days\n"
-            f"Target Price: {r.get('target_price')} | Last Price: {r.get('history')[-1]['price'] if r.get('history') else 'N/A'}\n"
-            f"Notifications: {r.get('notifications')} | Email: {r.get('email')}\n"
-            f"Class: {r.get('travel_class','Economy')} | Min Bags: {r.get('min_bags')}\n"
-            f"Direct Only: {r.get('direct_only')} | Max Stops: {r.get('max_stops')}\n"
-            f"Avoid Airlines: {','.join(r.get('avoid_airlines',[]))}\n"
-            f"Preferred Airlines: {','.join(r.get('preferred_airlines',[]))}\n"
-            f"Last Tracked: {r.get('last_tracked')}\n"
-            "-------------------------------"
-        ))
+        if route_id and r.get("id") != route_id:
+            continue
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(0, 10, f"{r.get('origin')} → {r.get('destination')} ({r.get('travel_class')})", ln=True)
+        pdf.set_font("Arial", '', 12)
+        pdf.multi_cell(0, 8, f"""
+ID: {r.get('id')}
+Departure: {r.get('departure')}
+Return: {r.get('return')}
+Stay: {r.get('stay_min')}–{r.get('stay_max')} jours
+Target Price: {r.get('target_price')}€
+Notifications: {r.get('notifications')}
+Email: {r.get('email')}
+Tracking/Day: {r.get('tracking_per_day')}
+""")
+
+        # Ajouter graph
+        if r.get("history"):
+            fig = plot_price_history(r.get("history"))
+            img_bytes = BytesIO()
+            fig.savefig(img_bytes, format='png')
+            plt.close(fig)
+            img_bytes.seek(0)
+            pdf.image(img_bytes, x=10, w=190)
+
     pdf.output(path)
     return path
