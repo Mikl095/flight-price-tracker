@@ -1,94 +1,94 @@
 # exporters.py
 import pandas as pd
-import matplotlib.pyplot as plt
 from fpdf import FPDF
-import io
-from datetime import datetime
-from utils.storage import json_safe
+import matplotlib.pyplot as plt
+from io import BytesIO
 import os
+from datetime import datetime
 
 # -----------------------------
 # EXPORT CSV
 # -----------------------------
-def export_csv(routes, path="export.csv", route_id=None):
-    """Export CSV pour tous les suivis ou un suivi spécifique."""
+def export_csv(routes, filename="export.csv"):
     rows = []
     for r in routes:
-        if route_id and r["id"] != route_id:
-            continue
         for h in r.get("history", []):
             rows.append({
-                "id": r["id"],
-                "origin": r["origin"],
-                "destination": r["destination"],
-                "departure": r["departure"],
-                "return": r.get("return"),
-                "price": h.get("price"),
-                "date": h.get("date")
+                "ID": r.get("id"),
+                "Origin": r.get("origin"),
+                "Destination": r.get("destination"),
+                "Departure": r.get("departure"),
+                "Return": r.get("return"),
+                "Cabin": r.get("cabin_class"),
+                "DirectOnly": r.get("direct_only"),
+                "MinBags": r.get("min_bags"),
+                "Price": h["price"],
+                "DateTracked": h["date"]
             })
     df = pd.DataFrame(rows)
-    df.to_csv(path, index=False, encoding="utf-8-sig")
-    return path
+    df.to_csv(filename, index=False)
 
 # -----------------------------
 # EXPORT XLSX
 # -----------------------------
-def export_xlsx(routes, path="export.xlsx", route_id=None):
-    """Export XLSX pour tous les suivis ou un suivi spécifique."""
-    rows = []
-    for r in routes:
-        if route_id and r["id"] != route_id:
-            continue
-        for h in r.get("history", []):
-            rows.append({
-                "id": r["id"],
-                "origin": r["origin"],
-                "destination": r["destination"],
-                "departure": r["departure"],
-                "return": r.get("return"),
-                "price": h.get("price"),
-                "date": h.get("date")
+def export_xlsx(routes, filename="export.xlsx"):
+    with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+        for r in routes:
+            hist = pd.DataFrame(r.get("history", []))
+            if hist.empty:
+                hist = pd.DataFrame(columns=["date","price"])
+            hist.to_excel(writer, sheet_name=f"{r['origin']}_{r['destination']}", index=False)
+            # Ajouter graphique
+            workbook  = writer.book
+            worksheet = writer.sheets[f"{r['origin']}_{r['destination']}"]
+            chart = workbook.add_chart({'type': 'line'})
+            chart.add_series({
+                'categories': [f"{r['origin']}_{r['destination']}", 1, 0, len(hist), 0],
+                'values':     [f"{r['origin']}_{r['destination']}", 1, 1, len(hist), 1],
+                'name': f"Price"
             })
-    df = pd.DataFrame(rows)
-    df.to_excel(path, index=False)
-    return path
+            chart.set_title({'name': 'Historique prix'})
+            worksheet.insert_chart('D2', chart)
 
 # -----------------------------
 # EXPORT PDF
 # -----------------------------
-def export_pdf(routes, path="export.pdf", route_id=None):
-    """Export PDF avec graphiques pour tous les suivis ou un suivi spécifique."""
+def export_pdf(routes, filename="export.pdf"):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
+
     for r in routes:
-        if route_id and r["id"] != route_id:
-            continue
         pdf.add_page()
         pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, f"{r['origin']} → {r['destination']}", ln=True)
+        pdf.cell(0, 10, f"Suivi {r['origin']} → {r['destination']} (ID {r['id'][:8]})", ln=True)
         pdf.set_font("Arial", "", 12)
-        pdf.cell(0, 8, f"Départ: {r.get('departure')}  Retour: {r.get('return')}", ln=True)
-        pdf.cell(0, 8, f"Seuil: {r.get('target_price')}€  Notifications: {'ON' if r.get('notifications') else 'OFF'}", ln=True)
-        pdf.cell(0, 8, f"Min/Max séjour: {r.get('stay_min')}-{r.get('stay_max')} jours", ln=True)
-        pdf.cell(0, 8, f"Classe: {r.get('travel_class','')}, Bagages: {r.get('min_bags',0)}, Direct only: {r.get('direct_only', False)}", ln=True)
+        pdf.multi_cell(0, 6,
+            f"Dates: {r.get('departure')} → {r.get('return')}\n"
+            f"Classe: {r.get('cabin_class')}\n"
+            f"Direct only: {r.get('direct_only')}\n"
+            f"Min bags: {r.get('min_bags')}\n"
+            f"Target price: {r.get('target_price')} €\n"
+            f"Email: {r.get('email') or '—'}"
+        )
+        pdf.ln(5)
 
         # Graphique historique
-        history = r.get("history", [])
-        if history:
-            dates = [datetime.fromisoformat(h["date"]) for h in history]
-            prices = [h["price"] for h in history]
+        hist = r.get("history", [])
+        if hist:
+            dates = [datetime.fromisoformat(h["date"]) for h in hist]
+            prices = [h["price"] for h in hist]
             fig, ax = plt.subplots()
             ax.plot(dates, prices, marker='o')
-            ax.set_title(f"{r['origin']} → {r['destination']} prix historique")
-            ax.set_ylabel("Prix (€)")
+            ax.set_title(f"Historique prix {r['origin']}→{r['destination']}")
             ax.set_xlabel("Date")
-            fig.tight_layout()
-            img_bytes = io.BytesIO()
-            fig.savefig(img_bytes, format='png')
+            ax.set_ylabel("Prix (€)")
+            plt.tight_layout()
+            # Sauvegarde dans buffer
+            buf = BytesIO()
+            plt.savefig(buf, format='png')
             plt.close(fig)
-            img_bytes.seek(0)
-            pdf.image(img_bytes, x=10, w=pdf.w - 20)
+            buf.seek(0)
+            pdf.image(buf, x=10, w=pdf.w - 20)
+        pdf.ln(10)
 
-    pdf.output(path)
-    return path
+    pdf.output(filename)
