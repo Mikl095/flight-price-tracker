@@ -1,28 +1,45 @@
 # app.py
 import streamlit as st
-from utils.storage import load_routes, save_routes
+from utils.storage import ensure_data_file, load_routes, save_routes, load_email_config
 from ui_components import (
     render_top_bar,
     render_dashboard,
     render_add_tab,
-    render_edit_tab,
+    render_config_tab,
     render_search_tab
 )
 
-st.set_page_config(page_title="Flight Price Tracker", layout="wide")
+# -----------------------------
+# INITIALISATION
+# -----------------------------
+ensure_data_file()
 routes = load_routes()
-render_top_bar()
+email_cfg = load_email_config()
 
-tab = st.sidebar.radio("Onglets", ["Dashboard", "Ajouter", "Modifier", "Suggestions"])
-if tab == "Dashboard":
-    render_dashboard(routes)
-elif tab == "Ajouter":
+# -----------------------------
+# Onglets principaux
+# -----------------------------
+tabs = ["Dashboard", "Ajouter un suivi", "Recherche / Simulation", "Configuration"]
+tab_selected = st.sidebar.radio("Navigation", tabs)
+
+# -----------------------------
+# RENDER SELECTED TAB
+# -----------------------------
+if tab_selected == "Dashboard":
+    render_top_bar(routes, email_cfg)
+    global_notif_enabled = bool(email_cfg.get("enabled", False))
+    render_dashboard(routes, email_cfg, global_notif_enabled)
+
+elif tab_selected == "Ajouter un suivi":
     render_add_tab(routes)
-elif tab == "Modifier":
-    if routes:
-        sel = st.selectbox("Choisir un suivi à modifier", options=routes, format_func=lambda x: f"{x['origin']} → {x['destination']}")
-        render_edit_tab(sel, routes)
-    else:
-        st.info("Aucun suivi existant à modifier")
-elif tab == "Suggestions":
+
+elif tab_selected == "Recherche / Simulation":
     render_search_tab(routes)
+
+elif tab_selected == "Configuration":
+    render_config_tab()
+
+# -----------------------------
+# AUTO SAVE (si modif manuelle)
+# -----------------------------
+save_routes(routes)
