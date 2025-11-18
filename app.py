@@ -700,9 +700,67 @@ with tab_search:
     st.write("Simulation de prix selon origines, destinations, date et durée de séjour.")
 
     with st.expander("Paramètres de recherche"):
-        ...
-        (ton code inchangé)
-        ...
+        origins_input = st.text_input("Origines (IATA, séparées par ,)", value="PAR,CDG")
+        destinations_input = st.text_input("Destinations (IATA, séparées par ,)", value="NYC,JFK,EWR")
+
+        start_date = st.date_input("Date départ approximative", date.today() + timedelta(days=90))
+        search_window_days = st.number_input("Fenêtre recherche (± jours)", min_value=0, max_value=30, value=7)
+
+        stay_days = st.number_input(
+            "Durée de séjour (jours)",
+            min_value=1,
+            max_value=60,
+            value=7,
+            help="Si aucune date de retour n'est fournie, la durée de séjour sera utilisée."
+        )
+
+        return_date_opt = st.date_input(
+            "Date retour (optionnelle)",
+            value=None,
+            help="Laisse vide pour utiliser uniquement la durée de séjour."
+        )
+
+        samples_per_option = st.number_input(
+            "Échantillons par combinaison",
+            min_value=3,
+            max_value=30,
+            value=8
+        )
+
+        if st.button("Lancer la recherche (simulation)"):
+
+            origins = [o.strip().upper() for o in origins_input.split(",") if o.strip()]
+            dests = [d.strip().upper() for d in destinations_input.split(",") if d.strip()]
+
+            results = []
+
+            for origin in origins:
+                for dest in dests:
+
+                    for delta in range(-search_window_days, search_window_days + 1):
+                        dep = start_date + timedelta(days=delta)
+
+                        # Return date logic
+                        if return_date_opt is None:
+                            ret = dep + timedelta(days=int(stay_days))
+                        else:
+                            ret = return_date_opt
+
+                        for _ in range(samples_per_option):
+                            price = random.randint(120, 1200)
+                            results.append({
+                                "origin": origin,
+                                "destination": dest,
+                                "departure": dep.isoformat(),
+                                "return": ret.isoformat(),
+                                "stay_days": int(stay_days),
+                                "price": price
+                            })
+
+            df_res = pd.DataFrame(results)
+            st.session_state["last_search"] = df_res
+
+            st.success(f"Simulation terminée : {len(df_res)} résultats générés.")
 
     # -------------------------
     # Display results
@@ -721,9 +779,8 @@ with tab_search:
         st.markdown("---")
 
         # ==========================================================
-        #  ➕ Ajouter un résultat comme suivi  ✅ (désormais dans l’onglet)
+        #  ➕ Ajouter un résultat comme suivi
         # ==========================================================
-
         st.subheader("➕ Ajouter un des résultats comme suivi")
 
         with st.form("add_from_search"):
@@ -736,6 +793,7 @@ with tab_search:
             add_submit = st.form_submit_button("Ajouter")
 
         if add_submit:
+
             row = df_res.iloc[int(sel_idx)]
 
             dep_dt = safe_iso_to_datetime(row["departure"])
@@ -810,6 +868,7 @@ with tab_search:
             st.success("Suivi ajouté depuis les suggestions ✔")
             st.rerun()
         
+
 
 # ============================================================
 # END OF APP
