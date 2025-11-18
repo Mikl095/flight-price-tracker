@@ -76,27 +76,59 @@ def export_pdf(routes, filename=None):
     if filename is None:
         filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
 
+    def _sanitize_for_fpdf(s: str) -> str:
+        """Replace known unicode chars by safe ascii/latin1 equivalents, then
+           ensure resulting str is encodable in latin-1 by replacing remaining
+           non-encodable chars."""
+        if s is None:
+            return ""
+        # common replacements
+        repl = {
+            "→": "->",
+            "–": "-",
+            "—": "-",
+            "…": "...",
+            "€": "EUR",
+            "“": '"',
+            "”": '"',
+            "‘": "'",
+            "’": "'",
+            "\u2014": "-",
+        }
+        for k, v in repl.items():
+            s = s.replace(k, v)
+        # finally, force latin-1 encoding with replacement for any remaining char
+        try:
+            s.encode("latin-1")
+            return s
+        except UnicodeEncodeError:
+            # replace non-latin1 with '?'
+            return s.encode("latin-1", errors="replace").decode("latin-1")
+
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
 
     for r in routes:
         pdf.add_page()
+        # title
+        title = f"Suivi {r.get('origin')} -> {r.get('destination')} (ID {r.get('id')[:8]})"
         pdf.set_font("Arial", "B", 14)
-        pdf.cell(0, 10, f"Suivi {r.get('origin')} → {r.get('destination')} (ID {r.get('id')[:8]})", ln=True)
+        pdf.cell(0, 10, _sanitize_for_fpdf(title), ln=True)
+
         pdf.set_font("Arial", "", 11)
         txt = (
-            f"Dates: {r.get('departure')} → {r.get('return')}\n"
+            f"Dates: {r.get('departure')} -> {r.get('return')}\n"
             f"Aéroport retour: {r.get('return_airport') or '—'}\n"
             f"Classe: {r.get('cabin_class')}\n"
             f"Direct only: {r.get('direct_only')}\n"
             f"Min bags: {r.get('min_bags')}\n"
-            f"Target price: {r.get('target_price')} €\n"
+            f"Target price: {r.get('target_price')} EUR\n"
             f"Email: {r.get('email') or '—'}\n"
         )
-        pdf.multi_cell(0, 6, txt)
+        pdf.multi_cell(0, 6, _sanitize_for_fpdf(txt))
         pdf.ln(4)
 
-        # Graphique historique (matplotlib -> image temporaire -> insert)
+        # Graphique historique
         hist = r.get("history", [])
         if hist:
             dates = []
@@ -111,9 +143,9 @@ def export_pdf(routes, filename=None):
             if dates and prices:
                 fig, ax = plt.subplots(figsize=(6,2.5))
                 ax.plot(dates, prices, marker='o', linewidth=1)
-                ax.set_title(f"Historique prix {r.get('origin')}→{r.get('destination')}")
+                ax.set_title(_sanitize_for_fpdf(f"Historique prix {r.get('origin')}->{r.get('destination')}"))
                 ax.set_xlabel("Date")
-                ax.set_ylabel("Prix (€)")
+                ax.set_ylabel("Prix (EUR)")
                 fig.autofmt_xdate()
                 plt.tight_layout()
 
@@ -122,33 +154,35 @@ def export_pdf(routes, filename=None):
                 plt.close(fig)
                 buf.seek(0)
 
-                # write to temp file because FPDF.image expects a file path for reliability
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpf:
-                    tmpf.write(buf.getvalue())
-                    tmp_path = tmpf.name
+                # write to temp file because FPDF.image expects a file path reliably
                 try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpf:
+                        tmpf.write(buf.getvalue())
+                        tmp_path = tmpf.name
                     pdf.image(tmp_path, x=10, w=pdf.w - 20)
                 except Exception:
-                    # ignore image errors
+                    # ignore image insertion errors
                     pass
                 finally:
                     try:
-                        os.unlink(tmp_path)
+                        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                            os.unlink(tmp_path)
                     except Exception:
                         pass
                 pdf.ln(6)
 
-    # get PDF bytes (S mode)
+    # output bytes (S)
     try:
         out = pdf.output(dest='S')
         if isinstance(out, bytes):
             pdf_bytes = out
         else:
-            # output may return str in some versions
-            pdf_bytes = out.encode('latin-1')
-    except TypeError:
-        # older/newer variants
+            # out is str -> encode safely using latin-1 with replacement
+            pdf_bytes = out.encode('latin-1', errors='replace')
+    except Exception:
+        # fallback: try to get str and encode
         out = pdf.output(dest='S')
-        pdf_bytes = out.encode('latin-1') if isinstance(out, str) else out
+        pdf_bytes = out.encode('latin-1', errors='replace') if isinstance(out, str) else out
 
     return pdf_bytes, filename
+
