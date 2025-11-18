@@ -40,7 +40,7 @@ def route_form_empty():
 # ---------------------------------------------------------
 #  FORMULAIRE : EDITION D’UN SUIVI EXISTANT
 # ---------------------------------------------------------
-def route_form_edit(row):
+def route_form_from_row(row):
     st.subheader("✏️ Modifier le suivi")
 
     origin = st.text_input("Origine (IATA)", value=row["origin"])
