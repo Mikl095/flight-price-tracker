@@ -10,6 +10,62 @@ import pandas as pd
 from io import BytesIO
 import os
 
+# ==============================================================
+# JSON SANITIZER — compatible numpy, pandas, dates, etc.
+# ==============================================================
+
+import numpy as np
+import pandas as pd
+from datetime import date, datetime
+
+def json_safe(v):
+    """Convert any value into a JSON-serializable type."""
+    if v is None:
+        return None
+
+    # numpy types (int64, float64…)
+    if isinstance(v, np.generic):
+        return v.item()
+
+    # numpy.nan
+    if isinstance(v, float) and np.isnan(v):
+        return None
+
+    # pandas NA / NaT
+    if v is pd.NA or v is pd.NaT:
+        return None
+
+    # pandas Timestamp
+    if isinstance(v, pd.Timestamp):
+        return v.isoformat()
+
+    # date ou datetime Python
+    if isinstance(v, (date, datetime)):
+        return v.isoformat()
+
+    return v
+
+
+def sanitize_dict(d):
+    """Sanitize recursively any dict for JSON writing."""
+    out = {}
+    for k, v in d.items():
+
+        # liste
+        if isinstance(v, list):
+            out[k] = [json_safe(x) for x in v]
+            continue
+
+        # dict
+        if isinstance(v, dict):
+            out[k] = sanitize_dict(v)
+            continue
+
+        out[k] = json_safe(v)
+
+    return out
+        
+
 from utils.storage import (
     ensure_data_file, load_routes, save_routes,
     load_email_config, save_email_config,
@@ -726,73 +782,109 @@ with tab_search:
 
         st.markdown("---")
 
-        # -------------------------
-        # Add a result as a route
-        # -------------------------
-        st.subheader("➕ Ajouter un des résultats comme suivi")
 
-        with st.form("add_from_search"):
-            sel_idx = st.number_input(
-                "Index résultat à ajouter",
-                min_value=0,
-                max_value=max(0, len(df_res) - 1),
-                value=0
-            )
-            add_submit = st.form_submit_button("Ajouter")
+# -------------------------
+# Add a result as a route
+# -------------------------
+st.subheader("➕ Ajouter un des résultats comme suivi")
 
-        if add_submit:
-            row = df_res.iloc[int(sel_idx)]
+with st.form("add_from_search"):
+    sel_idx = st.number_input(
+        "Index résultat à ajouter",
+        min_value=0,
+        max_value=max(0, len(df_res) - 1),
+        value=0
+    )
+    add_submit = st.form_submit_button("Ajouter")
 
-            dep_dt = safe_iso_to_datetime(row["departure"])
-            ret_dt = safe_iso_to_datetime(row["return"])
+if add_submit:
+    row = df_res.iloc[int(sel_idx)]
 
-            new = {
-                "id": str(uuid.uuid4()),
-                "origin": row["origin"],
-                "destination": row["destination"],
-                "departure": row["departure"],
-                "departure_flex_days": 0,
-                "return": ret_dt.date().isoformat() if ret_dt else "",
-                "return_airport": None,
-                "stay_min": int(row["stay_days"]),
-                "stay_max": int(row["stay_days"]),
-                "return_flex_days": 0,
-                "target_price": float(row["price"]) * 0.9,
-                "tracking_per_day": 2,
-                "notifications": False,
-                "min_bags": 0,
-                "direct_only": False,
-                "max_stops": "any",
-                "avoid_airlines": [],
-                "preferred_airlines": [],
-                "email": "",
-                "history": [
-                    {"date": datetime.now().isoformat(), "price": row["price"]}
-                ],
-                "last_tracked": datetime.now().isoformat(),
-                "stats": {}
-            }
+    # --- Compute return date from stay_days ---
+    dep_dt = safe_iso_to_datetime(row["departure"])
+    if dep_dt:
+        return_iso = (dep_dt + timedelta(days=int(row["stay_days"]))).date().isoformat()
+    else:
+        return_iso = None
 
-# --- Force JSON-safe types ---
-def json_safe(v):
-    if v is None:
-        return None
-    if hasattr(v, "item"):      # numpy types
-        return v.item()
-    if hasattr(v, "isoformat"): # datetime.date
-        return v.isoformat()
-    return v
+    # ============================
+    # JSON SANITIZER FOR THIS BLOCK
+    # ============================
+    import numpy as np
+    import pandas as pd
+    from datetime import date, datetime
 
-# Convertit toutes les valeurs du dict
-new = {k: json_safe(v) for k, v in new.items()}
+    def json_safe(v):
+        if v is None:
+            return None
+        if isinstance(v, (np.generic,)):  # numpy int/float
+            return v.item()
+        if isinstance(v, float) and np.isnan(v):
+            return None
+        if v is pd.NaT or v is pd.NA:
+            return None
+        if isinstance(v, pd.Timestamp):
+            return v.isoformat()
+        if isinstance(v, (date, datetime)):
+            return v.isoformat()
+        return v
 
-routes.append(new)
-save_routes(routes)
-append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+    def sanitize_dict(d):
+        out = {}
+        for k, v in d.items():
+            if isinstance(v, list):
+                out[k] = [json_safe(x) for x in v]
+            elif isinstance(v, dict):
+                out[k] = sanitize_dict(v)
+            else:
+                out[k] = json_safe(v)
+        return out
 
-st.success("Suivi ajouté depuis les suggestions ✔")
-st.rerun()
+    # --- Build the new route ---
+    new = {
+        "id": str(uuid.uuid4()),
 
+        "origin": row["origin"],
+        "destination": row["destination"],
+
+        "departure": row["departure"],
+        "departure_flex_days": 0,
+
+        "return": return_iso,
+        "return_flex_days": 0,
+        "return_airport": None,
+
+        "stay_min": int(row["stay_days"]),
+        "stay_max": int(row["stay_days"]),
+
+        "target_price": float(json_safe(row["price"]) * 0.9),
+        "tracking_per_day": 2,
+        "notifications": False,
+        "email": "",
+
+        "min_bags": 0,
+        "direct_only": False,
+        "max_stops": "any",
+        "avoid_airlines": [],
+        "preferred_airlines": [],
+
+        "history": [
+            {"date": datetime.now().isoformat(), "price": int(json_safe(row["price"]))}
+        ],
+        "last_tracked": datetime.now().isoformat(),
+        "stats": {}
+    }
+
+    # 🔥 MAKE FULL DICT JSON-SAFE (fixes all numpy/pandas types)
+    new = sanitize_dict(new)
+
+    routes.append(new)
+    save_routes(routes)
+
+    append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+
+    st.success("Suivi ajouté depuis les suggestions ✔")
+    st.rerun()
 
 # ============================================================
 # END OF APP
