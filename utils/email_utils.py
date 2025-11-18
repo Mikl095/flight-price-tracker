@@ -2,6 +2,8 @@
 import os
 import logging
 
+DEFAULT_FROM = os.getenv("SENDGRID_FROM", "zendugan95@gmail.com")
+
 # attempt to import Streamlit secrets (optional)
 try:
     import streamlit as st
