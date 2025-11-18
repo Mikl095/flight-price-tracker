@@ -782,109 +782,106 @@ with tab_search:
 
         st.markdown("---")
 
+# ==========================================================
+#  ➕ Ajouter un résultat comme suivi
+#  (n'apparaît que si une recherche existe)
+# ==========================================================
 
-# -------------------------
-# Add a result as a route
-# -------------------------
-st.subheader("➕ Ajouter un des résultats comme suivi")
+if "last_search" in st.session_state:
 
-with st.form("add_from_search"):
-    sel_idx = st.number_input(
-        "Index résultat à ajouter",
-        min_value=0,
-        max_value=max(0, len(df_res) - 1),
-        value=0
-    )
-    add_submit = st.form_submit_button("Ajouter")
+    df_res = st.session_state["last_search"]
 
-if add_submit:
-    row = df_res.iloc[int(sel_idx)]
+    st.subheader("➕ Ajouter un des résultats comme suivi")
 
-    # --- Compute return date from stay_days ---
-    dep_dt = safe_iso_to_datetime(row["departure"])
-    if dep_dt:
-        return_iso = (dep_dt + timedelta(days=int(row["stay_days"]))).date().isoformat()
-    else:
-        return_iso = None
+    with st.form("add_from_search"):
+        sel_idx = st.number_input(
+            "Index résultat à ajouter",
+            min_value=0,
+            max_value=max(0, len(df_res) - 1),
+            value=0
+        )
+        add_submit = st.form_submit_button("Ajouter")
 
-    # ============================
-    # JSON SANITIZER FOR THIS BLOCK
-    # ============================
-    import numpy as np
-    import pandas as pd
-    from datetime import date, datetime
+    if add_submit:
 
-    def json_safe(v):
-        if v is None:
-            return None
-        if isinstance(v, (np.generic,)):  # numpy int/float
-            return v.item()
-        if isinstance(v, float) and np.isnan(v):
-            return None
-        if v is pd.NaT or v is pd.NA:
-            return None
-        if isinstance(v, pd.Timestamp):
-            return v.isoformat()
-        if isinstance(v, (date, datetime)):
-            return v.isoformat()
-        return v
+        row = df_res.iloc[int(sel_idx)]
 
-    def sanitize_dict(d):
-        out = {}
-        for k, v in d.items():
-            if isinstance(v, list):
-                out[k] = [json_safe(x) for x in v]
-            elif isinstance(v, dict):
-                out[k] = sanitize_dict(v)
-            else:
-                out[k] = json_safe(v)
-        return out
+        # --- Compute return date ---
+        dep_dt = safe_iso_to_datetime(row["departure"])
+        if dep_dt:
+            return_iso = (dep_dt + timedelta(days=int(row["stay_days"]))).date().isoformat()
+        else:
+            return_iso = None
 
-    # --- Build the new route ---
-    new = {
-        "id": str(uuid.uuid4()),
+        # --- Sanitizers (JSON-safe) ---
+        import numpy as np
+        import pandas as pd
+        from datetime import date, datetime
 
-        "origin": row["origin"],
-        "destination": row["destination"],
+        def json_safe(v):
+            if v is None:
+                return None
+            if isinstance(v, np.generic):
+                return v.item()
+            if isinstance(v, float) and np.isnan(v):
+                return None
+            if v is pd.NA or v is pd.NaT:
+                return None
+            if isinstance(v, pd.Timestamp):
+                return v.isoformat()
+            if isinstance(v, (date, datetime)):
+                return v.isoformat()
+            return v
 
-        "departure": row["departure"],
-        "departure_flex_days": 0,
+        def sanitize_dict(d):
+            out = {}
+            for k, v in d.items():
+                if isinstance(v, list):
+                    out[k] = [json_safe(x) for x in v]
+                elif isinstance(v, dict):
+                    out[k] = sanitize_dict(v)
+                else:
+                    out[k] = json_safe(v)
+            return out
 
-        "return": return_iso,
-        "return_flex_days": 0,
-        "return_airport": None,
+        # --- Build route ---
+        new = {
+            "id": str(uuid.uuid4()),
+            "origin": row["origin"],
+            "destination": row["destination"],
+            "departure": row["departure"],
+            "departure_flex_days": 0,
+            "return": return_iso,
+            "return_flex_days": 0,
+            "return_airport": None,
+            "stay_min": int(row["stay_days"]),
+            "stay_max": int(row["stay_days"]),
+            "target_price": float(json_safe(row["price"]) * 0.9),
+            "tracking_per_day": 2,
+            "notifications": False,
+            "email": "",
+            "min_bags": 0,
+            "direct_only": False,
+            "max_stops": "any",
+            "avoid_airlines": [],
+            "preferred_airlines": [],
+            "history": [
+                {"date": datetime.now().isoformat(), "price": int(json_safe(row["price"]))}
+            ],
+            "last_tracked": datetime.now().isoformat(),
+            "stats": {}
+        }
 
-        "stay_min": int(row["stay_days"]),
-        "stay_max": int(row["stay_days"]),
+        new = sanitize_dict(new)
 
-        "target_price": float(json_safe(row["price"]) * 0.9),
-        "tracking_per_day": 2,
-        "notifications": False,
-        "email": "",
+        routes.append(new)
+        save_routes(routes)
 
-        "min_bags": 0,
-        "direct_only": False,
-        "max_stops": "any",
-        "avoid_airlines": [],
-        "preferred_airlines": [],
+        append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+        st.success("Suivi ajouté depuis les suggestions ✔")
+        st.rerun()
 
-        "history": [
-            {"date": datetime.now().isoformat(), "price": int(json_safe(row["price"]))}
-        ],
-        "last_tracked": datetime.now().isoformat(),
-        "stats": {}
-    }
 
-    # 🔥 MAKE FULL DICT JSON-SAFE (fixes all numpy/pandas types)
-    new = sanitize_dict(new)
-
-    routes.append(new)
-    save_routes(routes)
-
-    append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
-
-    st.success("Suivi ajouté depuis les suggestions ✔")
-    st.rerun()
 
 # ============================================================
 # END OF APP
