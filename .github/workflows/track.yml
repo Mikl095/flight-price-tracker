@@ -2,7 +2,7 @@ name: Auto Flight Tracking
 
 on:
   schedule:
-    - cron: "0 */10 * * *"  # runs every 10 hours; GitHub triggers frequently but script respects tracking_per_day
+    - cron: "0 */10 * * *"  # every 10 hours
   workflow_dispatch:
 
 jobs:
@@ -31,6 +31,6 @@ jobs:
         run: |
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
-          git add data.json || true
+          git add routes.json || true
           git commit -m "Auto update prices" || echo "No changes"
           git push || echo "No permission to push"
