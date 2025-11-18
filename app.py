@@ -378,30 +378,65 @@ elif tab=="Configuration":
         st.success("Configuration enregistrée ✔")
 
 # -----------------------------
-# SIDEBAR — Export (séparé: tout / index)
+# SIDEBAR — Export (tolérant: path ou buffer)
 # -----------------------------
-st.sidebar.header("⬇️ Export")
+import io
 
-# choix du format
+st.sidebar.header("⬇️ Export")
 export_choice = st.sidebar.selectbox("Format d'export", ["CSV","XLSX","PDF"])
+
+# helper util to handle different exporter return types
+def _handle_export_result(res, default_fname):
+    """
+    Accepts:
+      - res: either a path string, bytes, or a BytesIO-like object
+      - default_fname: fallback filename (string)
+    Returns tuple (data_bytes, filename)
+    """
+    # If exporter returned a path (string)
+    if isinstance(res, str):
+        # read file bytes
+        with open(res, "rb") as f:
+            data = f.read()
+        return data, os.path.basename(res)
+
+    # If exporter returned bytes
+    if isinstance(res, (bytes, bytearray)):
+        return bytes(res), default_fname
+
+    # If exporter returned a file-like buffer (BytesIO)
+    if isinstance(res, io.BytesIO):
+        return res.getvalue(), default_fname
+
+    # If exporter returned None (but wrote file to disk with given filename param)
+    # We expect caller used explicit filename and exporter wrote it.
+    # In that case, caller should pass the filename; here we fallback to default_fname (not ideal).
+    return None, default_fname
 
 # EXPORT - bouton global
 st.sidebar.subheader("Exporter TOUS les suivis")
 if st.sidebar.button("Exporter tout"):
-    if routes:
-        fname = f"export_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_choice.lower()}"
+    if not routes:
+        st.sidebar.warning("Aucun suivi à exporter.")
+    else:
+        # call exporter and accept either path or buffer return
         try:
+            fname = f"export_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_choice.lower()}"
             if export_choice == "CSV":
-                export_csv(routes, fname)
+                res = export_csv(routes, fname)  # may return path or buffer or None
             elif export_choice == "XLSX":
-                export_xlsx(routes, fname)
-            elif export_choice == "PDF":
-                export_pdf(routes, fname)
-            st.sidebar.success(f"Export global généré : {fname}")
+                res = export_xlsx(routes, fname)
+            else:
+                res = export_pdf(routes, fname)
+
+            data, actual_name = _handle_export_result(res, fname)
+            if data is None:
+                st.sidebar.error("L'export a été généré mais impossible de récupérer le contenu (vérifie le dossier).")
+            else:
+                st.sidebar.success(f"Export global prêt : {actual_name}")
+                st.sidebar.download_button("Télécharger l'export", data=data, file_name=actual_name)
         except Exception as e:
             st.sidebar.error(f"Erreur lors de l'export global : {e}")
-    else:
-        st.sidebar.warning("Aucun suivi à exporter.")
 
 st.sidebar.markdown("---")
 
@@ -415,14 +450,19 @@ if routes:
             route_to_export = [routes[int(idx_sel)]]
             fname = f"export_{route_to_export[0]['id'][:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_choice.lower()}"
             if export_choice == "CSV":
-                export_csv(route_to_export, fname)
+                res = export_csv(route_to_export, fname)
             elif export_choice == "XLSX":
-                export_xlsx(route_to_export, fname)
-            elif export_choice == "PDF":
-                export_pdf(route_to_export, fname)
-            st.sidebar.success(f"Export du suivi {idx_sel} généré : {fname}")
+                res = export_xlsx(route_to_export, fname)
+            else:
+                res = export_pdf(route_to_export, fname)
+
+            data, actual_name = _handle_export_result(res, fname)
+            if data is None:
+                st.sidebar.error("L'export a été généré mais impossible de récupérer le contenu (vérifie le dossier).")
+            else:
+                st.sidebar.success(f"Export du suivi {idx_sel} prêt : {actual_name}")
+                st.sidebar.download_button("Télécharger le suivi", data=data, file_name=actual_name)
         except Exception as e:
             st.sidebar.error(f"Erreur export suivi {idx_sel} : {e}")
 else:
     st.sidebar.info("Aucun suivi disponible.")
-
