@@ -316,8 +316,19 @@ def render_add_tab(routes):
 # SEARCH & SUGGESTIONS
 # -----------------------------
 def render_search_tab(routes):
+    import streamlit as st
+    import pandas as pd
+    import random
+    from datetime import date, timedelta, datetime
+    import uuid
+    from utils.storage import save_routes, append_log, sanitize_dict
+
     st.header("🔎 Recherche & Suggestions (Simulation)")
     st.write("Simulation de prix selon origines, destinations, date et durée de séjour.")
+
+    # -------------------------
+    # PARAMÈTRES DE RECHERCHE
+    # -------------------------
     with st.expander("Paramètres de recherche"):
         origins_input = st.text_input("Origines (IATA, séparées par ,)", value="PAR,CDG")
         destinations_input = st.text_input("Destinations (IATA, séparées par ,)", value="NYC,JFK,EWR")
@@ -325,63 +336,95 @@ def render_search_tab(routes):
         search_window_days = st.number_input("Fenêtre recherche (± jours)", min_value=0, max_value=30, value=7)
         stay_days = st.number_input("Durée de séjour (jours)", min_value=1, max_value=60, value=7)
         return_date_opt = st.date_input("Date retour (optionnelle)", value=None)
-        samples_per_option = st.number_input("Échantillons par combinaison", min_value=3, max_value=30, value=5)
+        samples_per_option = st.number_input("Échantillons par combinaison", min_value=3, max_value=30, value=8)
 
-    # Création dataframe simulé
-    df_rows = []
-    for o in [x.strip().upper() for x in origins_input.split(",") if x.strip()]:
-        for d in [x.strip().upper() for x in destinations_input.split(",") if x.strip()]:
-            for i in range(samples_per_option):
-                df_rows.append({
+        if st.button("Lancer la recherche (simulation)"):
+            origins = [o.strip().upper() for o in origins_input.split(",") if o.strip()]
+            dests = [d.strip().upper() for d in destinations_input.split(",") if d.strip()]
+
+            results = [
+                {
                     "origin": o,
                     "destination": d,
-                    "departure": (start_date + timedelta(days=random.randint(-search_window_days, search_window_days))).isoformat(),
-                    "return": (start_date + timedelta(days=stay_days + random.randint(-2,2))).isoformat() if return_date_opt else None,
-                    "price": random.randint(120, 1000),
-                    "id": str(uuid.uuid4())
-                })
-    df_res = pd.DataFrame(df_rows)
+                    "departure": (start_date + timedelta(days=delta)).isoformat(),
+                    "return": (return_date_opt if return_date_opt else (start_date + timedelta(days=delta + int(stay_days)))).isoformat(),
+                    "stay_days": int(stay_days),
+                    "price": random.randint(120, 1200)
+                }
+                for o in origins for d in dests
+                for delta in range(-search_window_days, search_window_days + 1)
+                for _ in range(samples_per_option)
+            ]
 
-    # Multi-select via ID
-    with st.form("add_from_search"):
-        selected_ids = st.multiselect(
-            "Sélectionner les résultats à ajouter",
-            options=df_res["id"].tolist(),
-            format_func=lambda i: f"{df_res.loc[df_res['id']==i, 'origin'].values[0]} → "
-                                 f"{df_res.loc[df_res['id']==i, 'destination'].values[0]} "
-                                 f"({df_res.loc[df_res['id']==i, 'departure'].values[0]})"
-        )
-        add_submit = st.form_submit_button("Ajouter sélection")
+            df_res = pd.DataFrame(results)
+            st.session_state["last_search"] = df_res
+            st.success(f"Simulation terminée : {len(df_res)} résultats générés.")
 
-    if add_submit and selected_ids:
-        created = 0
-        for sid in selected_ids:
-            row = df_res.loc[df_res["id"]==sid].iloc[0]
-            new = {
-                "id": str(uuid.uuid4()),
-                "origin": row["origin"],
-                "destination": row["destination"],
-                "departure": row["departure"],
-                "return": row["return"],
-                "stay_min": stay_days,
-                "stay_max": stay_days+3,
-                "target_price": 450.0,
-                "tracking_per_day": 2,
-                "notifications": True,
-                "email": "",
-                "min_bags": 0,
-                "direct_only": False,
-                "max_stops": "any",
-                "avoid_airlines": [],
-                "preferred_airlines": [],
-                "history": [],
-                "last_tracked": None,
-                "stats": {}
-            }
-            routes.append(new)
-            created += 1
-        save_routes(routes)
-        st.success(f"{created} suivi(s) ajouté(s) depuis la simulation.")
+    # -------------------------
+    # AFFICHAGE DES RÉSULTATS
+    # -------------------------
+    if "last_search" in st.session_state:
+        df_res = st.session_state["last_search"]
+
+        st.subheader("⭐ Meilleurs prix par origine/destination")
+        bests = df_res.loc[df_res.groupby(["origin", "destination"])["price"].idxmin()]
+        st.dataframe(bests.sort_values("price"), use_container_width=True)
+
+        st.subheader("💸 Top 10 des dates les moins chères")
+        st.table(df_res.sort_values("price").head(10)[["origin","destination","departure","return","stay_days","price"]])
+
+        st.markdown("---")
+
+        # -------------------------
+        # Ajouter un ou plusieurs résultats comme suivi
+        # -------------------------
+        st.subheader("➕ Ajouter un ou plusieurs résultats comme suivi")
+        with st.form("add_from_search"):
+            # sélection par index (ID interne)
+            selected_indices = st.multiselect(
+                "Sélectionner les résultats à ajouter",
+                options=list(range(len(df_res))),
+                format_func=lambda i: f"{df_res.iloc[i]['origin']}→{df_res.iloc[i]['destination']} ({df_res.iloc[i]['departure']})"
+            )
+            add_submit = st.form_submit_button("Ajouter")
+
+        if add_submit and selected_indices:
+            created = 0
+            for idx in selected_indices:
+                row = df_res.iloc[idx]
+                dep_dt = datetime.fromisoformat(row["departure"])
+                return_iso = (datetime.fromisoformat(row["return"]).date().isoformat() if row["return"] else None)
+
+                new = {
+                    "id": str(uuid.uuid4()),
+                    "origin": row["origin"],
+                    "destination": row["destination"],
+                    "departure": row["departure"],
+                    "departure_flex_days": 0,
+                    "return": return_iso,
+                    "return_flex_days": 0,
+                    "return_airport": None,
+                    "stay_min": int(row["stay_days"]),
+                    "stay_max": int(row["stay_days"]),
+                    "target_price": float(row["price"]) * 0.9,
+                    "tracking_per_day": 2,
+                    "notifications": False,
+                    "email": "",
+                    "min_bags": 0,
+                    "direct_only": False,
+                    "max_stops": "any",
+                    "avoid_airlines": [],
+                    "preferred_airlines": [],
+                    "history": [{"date": datetime.now().isoformat(), "price": int(row["price"])}],
+                    "last_tracked": datetime.now().isoformat(),
+                    "stats": {}
+                }
+                routes.append(sanitize_dict(new))
+                append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+                created += 1
+
+            save_routes(routes)
+            st.success(f"{created} suivi(s) ajouté(s) ✔")
 
 
 # -----------------------------
