@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 
 DATA_FILE = "data.json"
 EMAIL_CONFIG_FILE = "email_config.json"
@@ -43,19 +43,35 @@ def append_log(line):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(line.rstrip() + "\n")
 
-# util: count updates in last 24h
+# ------------------------------------------------------------------
+# helpers for tracking frequency and stats
+# ------------------------------------------------------------------
 def count_updates_last_24h(route):
-    """Compte le nombre d'updates (history entries) durant les dernières 24h."""
+    """Count history entries in last 24 hours."""
     if not route.get("history"):
         return 0
     now = datetime.now()
     cutoff = now - timedelta(hours=24)
-    count = 0
+    cnt = 0
     for h in route.get("history", []):
         try:
             d = datetime.fromisoformat(h["date"])
         except Exception:
             continue
         if d >= cutoff:
-            count += 1
-    return count
+            cnt += 1
+    return cnt
+
+def increment_route_stat(route, key):
+    """Add a numeric stat under route['stats'] (creates dict if missing)."""
+    stats = route.setdefault("stats", {})
+    stats[key] = stats.get(key, 0) + 1
+
+def ensure_route_fields(route):
+    """Ensure route has fields used by tracker to avoid KeyErrors."""
+    route.setdefault("history", [])
+    route.setdefault("notifications", False)
+    route.setdefault("tracking_per_day", 1)
+    route.setdefault("target_price", None)
+    route.setdefault("email", "")
+    route.setdefault("stats", {})
