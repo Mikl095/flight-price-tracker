@@ -304,7 +304,7 @@ def render_search_tab(routes, save_routes):
             st.session_state["last_search"] = df_res
             st.success(f"Simulation terminée : {len(df_res)} résultats générés.")
 
-    # Display simulation results (if any)
+    # Display simulation results if any
     if "last_search" in st.session_state:
         df_res = st.session_state["last_search"]
 
@@ -321,90 +321,96 @@ def render_search_tab(routes, save_routes):
         st.markdown("---")
         st.subheader("➕ Ajouter un ou plusieurs résultats comme suivi")
 
-        # ---------- corrected block: mapping & selection by short number ----------
+        # ------------------ Add from search form ------------------
         with st.form("add_from_search"):
-    # Crée un mapping directement avec l'indice réel
-    mapping = [{"idx": i, "desc": f"{df_res.iloc[i]['origin']} → {df_res.iloc[i]['destination']} ({df_res.iloc[i]['departure']}) — {int(df_res.iloc[i]['price'])}€"} 
-               for i in range(len(df_res))]
+            # Mapping index -> description
+            mapping = [
+                {
+                    "idx": i,
+                    "desc": f"{df_res.iloc[i]['origin']} → {df_res.iloc[i]['destination']} ({df_res.iloc[i]['departure']}) — {int(df_res.iloc[i]['price'])}€ — {int(df_res.iloc[i]['stay_days'])}j"
+                }
+                for i in range(len(df_res))
+            ]
 
-    # Affiche la table pour information
-    try:
-        if len(mapping) <= 50:
-            st.table(mapping)
-        else:
-            st.table(pd.DataFrame(mapping).head(50))
-            st.caption(f"Affichage limité aux 50 premiers résultats (sur {len(mapping)}).")
-    except Exception:
-        for m in mapping[:50]:
-            st.write(f"{m['idx']}: {m['desc']}")
-
-    # Multiselect : internal values sont les indices réels
-    selected_indices = st.multiselect(
-        "Sélectionner les résultats à ajouter (par index affiché dans le tableau)",
-        options=[m["idx"] for m in mapping],
-        format_func=lambda i: str(i)  # affiche l'indice tel quel
-    )
-
-    add_submit = st.form_submit_button("Ajouter")
-
-if add_submit and selected_indices:
-    created = 0
-    for idx in selected_indices:
-        row = df_res.iloc[idx]
-
-        # Gestion date de départ et priorité stay
-        dep_dt = None
-        try:
-            dep_dt = pd.to_datetime(row["departure"])
-        except Exception:
+            # Display table (limited to 50 for UI)
             try:
-                dep_dt = datetime.fromisoformat(str(row["departure"]))
-            except Exception:
-                dep_dt = None
-
-        if pd.isna(row.get("return")) or not str(row.get("return")).strip():
-            priority = True
-            return_iso = None
-        else:
-            priority = False
-            try:
-                return_iso = pd.to_datetime(row["return"]).date().isoformat()
-            except Exception:
-                if dep_dt is not None:
-                    return_iso = (dep_dt.date() + pd.Timedelta(days=int(row.get("stay_days", 0)))).isoformat()
+                if len(mapping) <= 50:
+                    st.table(mapping)
                 else:
+                    st.table(pd.DataFrame(mapping).head(50))
+                    st.caption(f"Affichage limité aux 50 premiers résultats (sur {len(mapping)}).")
+            except Exception:
+                for m in mapping[:50]:
+                    st.write(f"{m['idx']}: {m['desc']}")
+
+            # Multiselect: internal values = real indices
+            selected_indices = st.multiselect(
+                "Sélectionner les résultats à ajouter (par index affiché dans le tableau)",
+                options=[m["idx"] for m in mapping],
+                format_func=lambda i: str(i)
+            )
+
+            add_submit = st.form_submit_button("Ajouter")
+
+        if add_submit and selected_indices:
+            created = 0
+            for idx in selected_indices:
+                row = df_res.iloc[idx]
+
+                # Parse departure date
+                dep_dt = None
+                try:
+                    dep_dt = pd.to_datetime(row["departure"])
+                except Exception:
+                    try:
+                        dep_dt = datetime.fromisoformat(str(row["departure"]))
+                    except Exception:
+                        dep_dt = None
+
+                # Determine priority_stay and return date
+                if pd.isna(row.get("return")) or not str(row.get("return")).strip():
+                    priority = True
                     return_iso = None
+                else:
+                    priority = False
+                    try:
+                        return_iso = pd.to_datetime(row["return"]).date().isoformat()
+                    except Exception:
+                        if dep_dt is not None:
+                            return_iso = (dep_dt.date() + pd.Timedelta(days=int(row.get("stay_days", 0)))).isoformat()
+                        else:
+                            return_iso = None
 
-        new = {
-            "id": str(uuid.uuid4()),
-            "origin": row["origin"],
-            "destination": row["destination"],
-            "departure": row["departure"],
-            "departure_flex_days": 0,
-            "return": return_iso,
-            "return_flex_days": 0,
-            "priority_stay": bool(priority),
-            "return_airport": None,
-            "stay_min": int(row["stay_days"]),
-            "stay_max": int(row["stay_days"]),
-            "target_price": float(row["price"]) * 0.9,
-            "tracking_per_day": 2,
-            "notifications": False,
-            "email": "",
-            "min_bags": 0,
-            "direct_only": False,
-            "max_stops": "any",
-            "avoid_airlines": [],
-            "preferred_airlines": [],
-            "history": [{"date": datetime.now().isoformat(), "price": int(row["price"])}],
-            "last_tracked": datetime.now().isoformat(),
-            "stats": {}
-        }
+                new = {
+                    "id": str(uuid.uuid4()),
+                    "origin": row["origin"],
+                    "destination": row["destination"],
+                    "departure": row["departure"],
+                    "departure_flex_days": 0,
+                    "return": return_iso,
+                    "return_flex_days": 0,
+                    "priority_stay": bool(priority),
+                    "return_airport": None,
+                    "stay_min": int(row["stay_days"]),
+                    "stay_max": int(row["stay_days"]),
+                    "target_price": float(row["price"]) * 0.9,
+                    "tracking_per_day": 2,
+                    "notifications": False,
+                    "email": "",
+                    "min_bags": 0,
+                    "direct_only": False,
+                    "max_stops": "any",
+                    "avoid_airlines": [],
+                    "preferred_airlines": [],
+                    "history": [{"date": datetime.now().isoformat(), "price": int(row["price"])}],
+                    "last_tracked": datetime.now().isoformat(),
+                    "stats": {}
+                }
 
-        routes.append(sanitize_dict(new))
-        append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
-        created += 1
+                routes.append(sanitize_dict(new))
+                append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+                created += 1
 
-    save_routes(routes)
-    st.success(f"{created} suivi(s) ajouté(s) ✔")
-    st.rerun()
+            save_routes(routes)
+            st.success(f"{created} suivi(s) ajouté(s) ✔")
+            st.rerun()
