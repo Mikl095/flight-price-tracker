@@ -3,7 +3,6 @@ import streamlit as st
 from datetime import datetime, timedelta
 from utils.storage import load_routes, save_routes, ensure_route_fields, sanitize_dict
 from utils.email_utils import send_email
-from utils.plotting import plot_price_history
 import uuid
 import pandas as pd
 
@@ -76,7 +75,6 @@ def render_edit_tab(routes):
         origin = st.text_input("Origine", value=route['origin'])
         destination = st.text_input("Destination", value=route['destination'])
         departure = st.date_input("Départ", value=datetime.fromisoformat(route['departure']))
-        # si pas de retour, prioriser stay
         if route.get('return'):
             return_date_val = datetime.fromisoformat(route['return'])
         else:
@@ -106,7 +104,7 @@ def render_edit_tab(routes):
         st.session_state.pop("edit_id")
 
 def render_search_tab(routes):
-    st.subheader("Recherche suggestions")
+    st.subheader("Suggestions")
     df_res = pd.DataFrame([{"id": r["id"], "origin": r["origin"], "destination": r["destination"], "departure": r["departure"]} for r in routes])
     if df_res.empty:
         st.info("Pas de suggestions disponibles")
