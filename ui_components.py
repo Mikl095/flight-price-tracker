@@ -1,144 +1,132 @@
 # ui_components.py
 import streamlit as st
 from datetime import datetime, timedelta
-import random
-from utils.storage import ensure_route_fields, save_routes, append_log, count_updates_last_24h, sanitize_dict
-from utils.plotting import plot_price_history
+from utils.storage import load_routes, save_routes, ensure_route_fields, sanitize_dict
 from utils.email_utils import send_email
+from utils.plotting import plot_price_history
+import uuid
+import pandas as pd
 
-# ----------------------------
-# Top bar
-# ----------------------------
-def render_top_bar(routes, email_cfg):
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
-        if st.button("Mettre à jour tous (simu)"):
-            for r in routes:
-                price = random.randint(120, 1000)
-                r.setdefault("history", []).append({"date": datetime.now().isoformat(), "price": price})
-                r["last_tracked"] = datetime.now().isoformat()
-            save_routes(routes)
-            append_log(f"{datetime.now().isoformat()} - Bulk update (simu)")
-            st.success("Mise à jour globale simulée.")
-            st.experimental_rerun()
-    with col3:
-        st.markdown("**Exporter**")
-        if st.button("CSV"):
-            import pandas as pd
-            df = pd.DataFrame(routes)
-            df.to_csv("export.csv", index=False)
-            st.download_button("Télécharger CSV", data=open("export.csv","rb").read(), file_name="export.csv")
-        if st.button("PDF"):
-            # Placeholder PDF export
-            with open("export.pdf","wb") as f: f.write(b"PDF Placeholder")
-            st.download_button("Télécharger PDF", data=open("export.pdf","rb").read(), file_name="export.pdf")
-        if st.button("XLSX"):
-            import pandas as pd
-            df = pd.DataFrame(routes)
-            df.to_excel("export.xlsx", index=False)
-            st.download_button("Télécharger XLSX", data=open("export.xlsx","rb").read(), file_name="export.xlsx")
+def render_top_bar():
+    st.title("Flight Price Tracker")
+    st.markdown("---")
 
+def render_dashboard(routes):
+    st.subheader("Suivis existants")
+    if not routes:
+        st.info("Aucun suivi disponible.")
+        return
+    for r in routes:
+        ensure_route_fields(r)
+        col1, col2 = st.columns([3,1])
+        with col1:
+            st.markdown(f"**{r['origin']} → {r['destination']}**")
+            st.markdown(f"Départ: {r['departure']} | Retour: {r.get('return', 'N/A')} | Prix cible: {r['target_price']}€")
+        with col2:
+            if st.button("Éditer", key=f"edit_{r['id']}"):
+                st.session_state["edit_id"] = r["id"]
 
-# ----------------------------
-# Dashboard tab
-# ----------------------------
-def render_dashboard(tab, routes, email_cfg):
-    with tab:
-        st.subheader("Dashboard des suivis")
-        for i, r in enumerate(routes):
-            ensure_route_fields(r)
-            with st.expander(f"{r['origin']} → {r['destination']}"):
-                st.write(f"Départ : {r['departure']}")
-                st.write(f"Retour : {r['return'] or 'N/A'}")
-                st.write(f"Target price : €{r['target_price']}")
-                st.write(f"Notifications : {r['notifications']}")
-                fig = plot_price_history(r.get("history", []))
-                st.pyplot(fig)
+def render_add_tab(routes):
+    st.subheader("Ajouter un suivi")
+    with st.form("add_form"):
+        origin = st.text_input("Origine")
+        destination = st.text_input("Destination")
+        departure = st.date_input("Départ")
+        return_date = st.date_input("Retour (facultatif)", value=None)
+        stay_min = st.number_input("Durée minimale du séjour (jours)", min_value=1, value=1)
+        stay_max = st.number_input("Durée maximale du séjour (jours)", min_value=1, value=7)
+        target_price = st.number_input("Prix cible (€)", min_value=1.0, value=100.0)
+        notifications = st.checkbox("Activer notifications")
+        email = st.text_input("Email pour notifications")
+        add_submit = st.form_submit_button("Ajouter")
 
+    if add_submit:
+        new_id = str(uuid.uuid4())
+        r = {
+            "id": new_id,
+            "origin": origin,
+            "destination": destination,
+            "departure": departure.isoformat(),
+            "return": return_date.isoformat() if return_date else None,
+            "stay_min": stay_min,
+            "stay_max": stay_max,
+            "target_price": target_price,
+            "notifications": notifications,
+            "email": email,
+            "history": []
+        }
+        ensure_route_fields(r)
+        routes.append(r)
+        save_routes(routes)
+        st.success(f"Suivi ajouté pour {origin} → {destination}")
 
-# ----------------------------
-# Ajouter / Edit tab
-# ----------------------------
-def render_add_tab(tab, routes):
-    with tab:
-        st.subheader("Ajouter un suivi")
-        with st.form("add_route_form"):
-            origin = st.text_input("Ville de départ")
-            destination = st.text_input("Ville d'arrivée")
-            departure = st.date_input("Date de départ")
-            priority_stay = st.checkbox("Prioriser durée de séjour si pas de date de retour")
-            return_date = st.date_input("Date de retour (optionnel)", value=None)
-            target_price = st.number_input("Prix cible (€)", value=100.0)
-            notifications = st.checkbox("Activer notifications")
-            submit = st.form_submit_button("Ajouter")
+def render_edit_tab(routes):
+    edit_id = st.session_state.get("edit_id")
+    if not edit_id:
+        return
 
-        if submit:
-            new_route = {
-                "id": str(len(routes)+1),
-                "origin": origin,
-                "destination": destination,
-                "departure": departure.isoformat(),
-                "return": return_date.isoformat() if return_date else None,
-                "priority_stay": priority_stay,
-                "target_price": target_price,
-                "notifications": notifications,
-                "history": []
-            }
-            ensure_route_fields(new_route)
-            routes.append(new_route)
-            save_routes(routes)
-            st.success(f"Suivi ajouté : {origin} → {destination}")
+    route = next((r for r in routes if r["id"] == edit_id), None)
+    if not route:
+        st.error("Suivi introuvable")
+        return
 
+    ensure_route_fields(route)
+    st.subheader(f"Éditer suivi {route['origin']} → {route['destination']}")
+    with st.form(f"edit_form_{edit_id}"):
+        origin = st.text_input("Origine", value=route['origin'])
+        destination = st.text_input("Destination", value=route['destination'])
+        departure = st.date_input("Départ", value=datetime.fromisoformat(route['departure']))
+        # si pas de retour, prioriser stay
+        if route.get('return'):
+            return_date_val = datetime.fromisoformat(route['return'])
+        else:
+            return_date_val = departure + timedelta(days=route.get("stay_max", 1))
+        return_date = st.date_input("Retour (facultatif)", value=return_date_val)
+        stay_min = st.number_input("Durée minimale du séjour (jours)", min_value=1, value=route.get("stay_min",1))
+        stay_max = st.number_input("Durée maximale du séjour (jours)", min_value=1, value=route.get("stay_max",7))
+        target_price = st.number_input("Prix cible (€)", min_value=1.0, value=route.get("target_price",100.0))
+        notifications = st.checkbox("Activer notifications", value=route.get("notifications", False))
+        email = st.text_input("Email pour notifications", value=route.get("email",""))
+        save_submit = st.form_submit_button("Sauvegarder")
 
-# ----------------------------
-# Config tab
-# ----------------------------
-def render_config_tab(tab, email_cfg):
-    with tab:
-        st.subheader("Configuration e-mail")
-        with st.form("email_form"):
-            enabled = st.checkbox("Activer notifications", value=email_cfg.get("enabled", False))
-            email = st.text_input("E-mail de notification", value=email_cfg.get("email", ""))
-            submit = st.form_submit_button("Enregistrer")
+    if save_submit:
+        route.update({
+            "origin": origin,
+            "destination": destination,
+            "departure": departure.isoformat(),
+            "return": return_date.isoformat() if return_date else None,
+            "stay_min": stay_min,
+            "stay_max": stay_max,
+            "target_price": target_price,
+            "notifications": notifications,
+            "email": email
+        })
+        save_routes(routes)
+        st.success("Suivi mis à jour")
+        st.session_state.pop("edit_id")
 
-        if submit:
-            email_cfg["enabled"] = enabled
-            email_cfg["email"] = email
-            from utils.storage import save_email_config
-            save_email_config(email_cfg)
-            st.success("Configuration sauvegardée")
-            if enabled:
-                ok, msg = send_email(email, "Test notification", "Ceci est un test")
-                st.info(f"Test e-mail : {'Succès' if ok else 'Échec'} ({msg})")
+def render_search_tab(routes):
+    st.subheader("Recherche suggestions")
+    df_res = pd.DataFrame([{"id": r["id"], "origin": r["origin"], "destination": r["destination"], "departure": r["departure"]} for r in routes])
+    if df_res.empty:
+        st.info("Pas de suggestions disponibles")
+        return
 
+    with st.form("add_from_search"):
+        selected_ids = st.multiselect(
+            "Sélectionner les résultats à ajouter",
+            options=df_res["id"].tolist(),
+            format_func=lambda i: f"{df_res.loc[df_res['id']==i,'origin'].values[0]} → {df_res.loc[df_res['id']==i,'destination'].values[0]} ({df_res.loc[df_res['id']==i,'departure'].values[0]})"
+        )
+        add_submit = st.form_submit_button("Ajouter")
 
-# ----------------------------
-# Recherche & Suggestions
-# ----------------------------
-def render_search_tab(tab, routes):
-    with tab:
-        st.subheader("Suggestions et multi-sélection")
-        import pandas as pd
-        # Simuler dataframe de suggestions
-        df_res = pd.DataFrame([
-            {"id": r["id"], "origin": r["origin"], "destination": r["destination"], "departure": r["departure"]}
-            for r in routes
-        ])
-        if df_res.empty:
-            st.info("Pas de suggestions disponibles")
-            return
-
-        with st.form("add_from_search"):
-            selected_ids = st.multiselect(
-                "Sélectionner les résultats à ajouter",
-                options=list(df_res["id"]),
-                format_func=lambda i: f"{df_res.loc[df_res['id']==i, 'origin'].values[0]} → {df_res.loc[df_res['id']==i, 'destination'].values[0]} ({df_res.loc[df_res['id']==i, 'departure'].values[0]})"
-            )
-            add_submit = st.form_submit_button("Ajouter")
-
-        if add_submit and selected_ids:
-            for r in routes:
-                if r["id"] in selected_ids:
-                    st.success(f"Ajouté : {r['origin']} → {r['destination']}")
-            append_log(f"{datetime.now().isoformat()} - Ajout suggestions {selected_ids}")
-            save_routes(routes)
+    if add_submit and selected_ids:
+        created = 0
+        for sid in selected_ids:
+            if sid not in [r["id"] for r in routes]:
+                r = next((r for r in routes if r["id"]==sid), None)
+                if r:
+                    routes.append(r)
+                    created += 1
+        save_routes(routes)
+        st.success(f"{created} suivis ajoutés")
