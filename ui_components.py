@@ -319,7 +319,7 @@ def render_search_tab(routes):
     import streamlit as st
     import pandas as pd
     import random
-    from datetime import date, timedelta, datetime
+    from datetime import date, datetime, timedelta
     import uuid
     from utils.storage import save_routes, append_log, sanitize_dict
 
@@ -361,70 +361,66 @@ def render_search_tab(routes):
             st.success(f"Simulation terminée : {len(df_res)} résultats générés.")
 
     # -------------------------
-    # AFFICHAGE DES RÉSULTATS
+    # AFFICHAGE DES TOP 10
     # -------------------------
     if "last_search" in st.session_state:
         df_res = st.session_state["last_search"]
-
-        st.subheader("⭐ Meilleurs prix par origine/destination")
-        bests = df_res.loc[df_res.groupby(["origin", "destination"])["price"].idxmin()]
-        st.dataframe(bests.sort_values("price"), use_container_width=True)
-
-        st.subheader("💸 Top 10 des dates les moins chères")
-        st.table(df_res.sort_values("price").head(10)[["origin","destination","departure","return","stay_days","price"]])
-
-        st.markdown("---")
+        st.subheader("💸 Top 10 des vols les moins chers")
+        top10 = df_res.sort_values("price").head(10).reset_index(drop=True)
+        st.table(top10[["origin","destination","departure","return","stay_days","price"]])
 
         # -------------------------
         # Ajouter un ou plusieurs résultats comme suivi
         # -------------------------
-        st.subheader("➕ Ajouter un ou plusieurs résultats comme suivi")
-        with st.form("add_from_search"):
-            # sélection par index (ID interne)
-            selected_indices = st.multiselect(
-                "Sélectionner les résultats à ajouter",
-                options=list(range(len(df_res))),
-                format_func=lambda i: f"{df_res.iloc[i]['origin']}→{df_res.iloc[i]['destination']} ({df_res.iloc[i]['departure']})"
-            )
-            add_submit = st.form_submit_button("Ajouter")
+        st.subheader("➕ Ajouter un ou plusieurs résultats comme suivi (Top 10 uniquement)")
+        st.write("Indiquez les indices (0 à 9) séparés par des virgules, correspondant aux lignes du top 10.")
+        ids_input = st.text_input("Indices à ajouter (ex: 0,2,5)")
 
-        if add_submit and selected_indices:
-            created = 0
-            for idx in selected_indices:
-                row = df_res.iloc[idx]
-                dep_dt = datetime.fromisoformat(row["departure"])
-                return_iso = (datetime.fromisoformat(row["return"]).date().isoformat() if row["return"] else None)
+        if st.button("Ajouter sélection au suivi"):
+            if ids_input.strip():
+                try:
+                    indices = [int(i.strip()) for i in ids_input.split(",") if i.strip()]
+                    created = 0
+                    for idx in indices:
+                        if 0 <= idx < len(top10):
+                            row = top10.iloc[idx]
+                            dep_dt = datetime.fromisoformat(row["departure"])
+                            return_iso = (datetime.fromisoformat(row["return"]).date().isoformat() if row["return"] else None)
 
-                new = {
-                    "id": str(uuid.uuid4()),
-                    "origin": row["origin"],
-                    "destination": row["destination"],
-                    "departure": row["departure"],
-                    "departure_flex_days": 0,
-                    "return": return_iso,
-                    "return_flex_days": 0,
-                    "return_airport": None,
-                    "stay_min": int(row["stay_days"]),
-                    "stay_max": int(row["stay_days"]),
-                    "target_price": float(row["price"]) * 0.9,
-                    "tracking_per_day": 2,
-                    "notifications": False,
-                    "email": "",
-                    "min_bags": 0,
-                    "direct_only": False,
-                    "max_stops": "any",
-                    "avoid_airlines": [],
-                    "preferred_airlines": [],
-                    "history": [{"date": datetime.now().isoformat(), "price": int(row["price"])}],
-                    "last_tracked": datetime.now().isoformat(),
-                    "stats": {}
-                }
-                routes.append(sanitize_dict(new))
-                append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
-                created += 1
+                            new = {
+                                "id": str(uuid.uuid4()),
+                                "origin": row["origin"],
+                                "destination": row["destination"],
+                                "departure": row["departure"],
+                                "departure_flex_days": 0,
+                                "return": return_iso,
+                                "return_flex_days": 0,
+                                "return_airport": None,
+                                "stay_min": int(row["stay_days"]),
+                                "stay_max": int(row["stay_days"]),
+                                "target_price": float(row["price"]) * 0.9,
+                                "tracking_per_day": 2,
+                                "notifications": False,
+                                "email": "",
+                                "min_bags": 0,
+                                "direct_only": False,
+                                "max_stops": "any",
+                                "avoid_airlines": [],
+                                "preferred_airlines": [],
+                                "history": [{"date": datetime.now().isoformat(), "price": int(row["price"])}],
+                                "last_tracked": datetime.now().isoformat(),
+                                "stats": {}
+                            }
+                            routes.append(sanitize_dict(new))
+                            append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+                            created += 1
+                    save_routes(routes)
+                    st.success(f"{created} suivi(s) ajouté(s) ✔")
+                except Exception as e:
+                    st.error(f"Erreur dans la saisie des indices : {e}")
+            else:
+                st.warning("Veuillez entrer au moins un indice.")
 
-            save_routes(routes)
-            st.success(f"{created} suivi(s) ajouté(s) ✔")
 
 
 # -----------------------------
