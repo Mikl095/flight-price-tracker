@@ -1,45 +1,24 @@
 # app.py
 import streamlit as st
-from utils.storage import ensure_data_file, load_routes, save_routes, load_email_config
+from utils.storage import load_routes
 from ui_components import (
-    render_top_bar,
-    render_dashboard,
-    render_add_tab,
-    render_config_tab,
-    render_search_tab
+    render_top_bar, render_dashboard, render_add_tab, render_edit_tab,
+    render_search_tab, render_config_tab
 )
 
-# -----------------------------
-# INITIALISATION
-# -----------------------------
-ensure_data_file()
+st.set_page_config(page_title="Flight Price Tracker", layout="wide")
+render_top_bar()
+
 routes = load_routes()
-email_cfg = load_email_config()
 
-# -----------------------------
-# Onglets principaux
-# -----------------------------
-tabs = ["Dashboard", "Ajouter un suivi", "Recherche / Simulation", "Configuration"]
-tab_selected = st.sidebar.radio("Navigation", tabs)
+tabs = ["Dashboard","Ajouter","Recherche/Simulation","Configuration"]
+tab = st.sidebar.radio("Onglets", tabs)
 
-# -----------------------------
-# RENDER SELECTED TAB
-# -----------------------------
-if tab_selected == "Dashboard":
-    render_top_bar(routes, email_cfg)
-    global_notif_enabled = bool(email_cfg.get("enabled", False))
-    render_dashboard(routes, email_cfg, global_notif_enabled)
-
-elif tab_selected == "Ajouter un suivi":
+if tab=="Dashboard":
+    render_dashboard(routes)
+elif tab=="Ajouter":
     render_add_tab(routes)
-
-elif tab_selected == "Recherche / Simulation":
+elif tab=="Recherche/Simulation":
     render_search_tab(routes)
-
-elif tab_selected == "Configuration":
+elif tab=="Configuration":
     render_config_tab()
-
-# -----------------------------
-# AUTO SAVE (si modif manuelle)
-# -----------------------------
-save_routes(routes)
