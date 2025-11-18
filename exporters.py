@@ -4,21 +4,16 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from fpdf import FPDF
 from datetime import datetime
-import xlsxwriter  # utilisé implicitement par pandas ExcelWriter
+import tempfile
+import os
 
 # -----------------------------
 # EXPORT CSV -> retourne (bytes, filename)
 # -----------------------------
 def export_csv(routes, filename=None):
-    """
-    Retourne (bytes_content, filename)
-    - routes : list de dict
-    - filename : optionnel, si None on génère un nom
-    """
     if filename is None:
         filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
-    # construire dataframe "long" : 1 ligne par entrée d'historique
     rows = []
     for r in routes:
         for h in r.get("history", []):
@@ -35,8 +30,8 @@ def export_csv(routes, filename=None):
                 "DateTracked": h.get("date")
             })
     df = pd.DataFrame(rows)
-    csv_str = df.to_csv(index=False)
-    return csv_str.encode("utf-8"), filename
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    return csv_bytes, filename
 
 # -----------------------------
 # EXPORT XLSX -> retourne (bytes, filename)
@@ -46,36 +41,30 @@ def export_xlsx(routes, filename=None):
         filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
     output = BytesIO()
-    # pandas + xlsxwriter to BytesIO
+    # Use pandas + xlsxwriter to write to BytesIO
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         workbook = writer.book
         for r in routes:
             sheet_name = f"{r.get('origin','X')}-{r.get('destination','Y')}"
-            # sheet names must be <=31 chars
-            sheet_name = sheet_name[:31]
+            sheet_name = sheet_name[:31]  # sheet name limit
             hist = pd.DataFrame(r.get("history", []))
             if hist.empty:
                 hist = pd.DataFrame(columns=["date", "price"])
-            # write history table
             hist.to_excel(writer, sheet_name=sheet_name, index=False)
 
-            # add a chart for this sheet
+            # Add chart
             worksheet = writer.sheets[sheet_name]
             chart = workbook.add_chart({'type': 'line'})
-
-            # compute range bounds: header row + data rows
             nrows = len(hist)
             if nrows >= 1:
-                # categories: col A (date), values: col B (price)
                 chart.add_series({
-                    'name':       'Price',
+                    'name': 'Price',
                     'categories': [sheet_name, 1, 0, nrows, 0],
                     'values':     [sheet_name, 1, 1, nrows, 1],
                 })
                 chart.set_title({'name': 'Historique prix'})
                 worksheet.insert_chart('D2', chart)
 
-    # get bytes
     output.seek(0)
     data = output.read()
     return data, filename
@@ -87,7 +76,6 @@ def export_pdf(routes, filename=None):
     if filename is None:
         filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
 
-    # Nous allons créer un PDF en mémoire puis renvoyer ses bytes
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -105,25 +93,22 @@ def export_pdf(routes, filename=None):
             f"Target price: {r.get('target_price')} €\n"
             f"Email: {r.get('email') or '—'}\n"
         )
-        # écrire le texte descriptif
         pdf.multi_cell(0, 6, txt)
         pdf.ln(4)
 
-        # Graphique historique : si on a des points
+        # Graphique historique (matplotlib -> image temporaire -> insert)
         hist = r.get("history", [])
         if hist:
             dates = []
             prices = []
             for h in hist:
                 try:
-                    # robust to iso-like strings
                     from datetime import datetime as _dt
                     dates.append(_dt.fromisoformat(h.get("date")))
                     prices.append(h.get("price"))
                 except Exception:
                     continue
             if dates and prices:
-                # tracer avec matplotlib et insérer l'image
                 fig, ax = plt.subplots(figsize=(6,2.5))
                 ax.plot(dates, prices, marker='o', linewidth=1)
                 ax.set_title(f"Historique prix {r.get('origin')}→{r.get('destination')}")
@@ -136,34 +121,34 @@ def export_pdf(routes, filename=None):
                 fig.savefig(buf, format="PNG")
                 plt.close(fig)
                 buf.seek(0)
-                # FPDF.image accepte un path ou un object file-like si on convertit en temporary file.
-                # FPDF.image does not accept BytesIO directly reliably, donc on insère via temporary file in-memory:
-                # FPDF has image() that can accept a file-like if pillow is used, but for compatibilité on écrira l'image en mémoire temporaire:
-                # On peut utiliser image from BytesIO with Pillow to get a temp file path. Simpler : use pdf.image with BytesIO via pillow is not guaranteed.
-                # Ici on use FPDF.image with argument as BytesIO by saving to a temp file-like via NamedTemporaryFile.
+
+                # write to temp file because FPDF.image expects a file path for reliability
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpf:
+                    tmpf.write(buf.getvalue())
+                    tmp_path = tmpf.name
                 try:
-                    # write bytes to a temporary in-memory file using Python tempfile
-                    import tempfile, os
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpf:
-                        tmpf.write(buf.getvalue())
-                        tmp_path = tmpf.name
-                    # insert image and remove temp file afterwards
                     pdf.image(tmp_path, x=10, w=pdf.w - 20)
-                    os.unlink(tmp_path)
                 except Exception:
-                    # fallback: ignore image if insertion échoue
+                    # ignore image errors
                     pass
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
                 pdf.ln(6)
 
-    # produce PDF bytes via output(dest='S')
+    # get PDF bytes (S mode)
     try:
-        pdf_bytes = pdf.output(dest='S').encode('latin-1')
-    except TypeError:
-        # some versions already return bytes/str
         out = pdf.output(dest='S')
         if isinstance(out, bytes):
             pdf_bytes = out
         else:
+            # output may return str in some versions
             pdf_bytes = out.encode('latin-1')
+    except TypeError:
+        # older/newer variants
+        out = pdf.output(dest='S')
+        pdf_bytes = out.encode('latin-1') if isinstance(out, str) else out
 
     return pdf_bytes, filename
