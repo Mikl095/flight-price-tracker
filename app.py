@@ -1,24 +1,27 @@
 # app.py
 import streamlit as st
-from utils.storage import load_routes
+from utils.storage import load_routes, load_email_config
 from ui_components import (
-    render_top_bar, render_dashboard, render_add_tab, render_edit_tab,
+    render_top_bar, render_dashboard, render_add_tab,
     render_search_tab, render_config_tab
 )
 
-st.set_page_config(page_title="Flight Price Tracker", layout="wide")
-render_top_bar()
-
+# Charger les données
 routes = load_routes()
+email_cfg = load_email_config()
 
-tabs = ["Dashboard","Ajouter","Recherche/Simulation","Configuration"]
-tab = st.sidebar.radio("Onglets", tabs)
+# Top bar
+render_top_bar(routes, email_cfg)
 
-if tab=="Dashboard":
-    render_dashboard(routes)
-elif tab=="Ajouter":
+# Onglets
+tabs = ["Dashboard", "Ajouter un suivi", "Recherche / Simulation", "Configuration"]
+selected_tab = st.sidebar.radio("Onglets", tabs)
+
+if selected_tab == "Dashboard":
+    render_dashboard(routes, email_cfg, global_notif_enabled=bool(email_cfg.get("enabled", False)))
+elif selected_tab == "Ajouter un suivi":
     render_add_tab(routes)
-elif tab=="Recherche/Simulation":
+elif selected_tab == "Recherche / Simulation":
     render_search_tab(routes)
-elif tab=="Configuration":
+elif selected_tab == "Configuration":
     render_config_tab()
