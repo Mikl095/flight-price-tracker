@@ -37,3 +37,24 @@ def export_pdf(routes, path="export.pdf"):
             y = 800
     c.save()
     return path
+
+def export_xlsx(routes, path="export.xlsx"):
+    rows = []
+    for r in routes:
+        last_price = r.get("history")[-1]["price"] if r.get("history") else None
+        rows.append({
+            "id": r.get("id"),
+            "origin": r.get("origin"),
+            "destination": r.get("destination"),
+            "departure": r.get("departure"),
+            "return": r.get("return"),
+            "last_price": last_price,
+            "target_price": r.get("target_price"),
+            "notifications": r.get("notifications"),
+            "email": r.get("email"),
+            "updates_last_24h": len([h for h in r.get("history", []) if datetime.fromisoformat(h["date"]) >= datetime.now() - pd.Timedelta(hours=24)]) if r.get("history") else 0
+        })
+    df = pd.DataFrame(rows)
+    # use XlsxWriter / openpyxl (both installed via requirements)
+    df.to_excel(path, index=False)
+    return path
