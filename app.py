@@ -416,127 +416,6 @@ with tab_add:
 
     with st.form("form_add_new"):
 
-        # ---- ORIGINE / DESTINATION ----
-        origin = st.text_input("Origine (IATA)", value="PAR")
-        destination = st.text_input("Destination (IATA)", value="TYO")
-
-        # ---- DÉPART ----
-        departure_date = st.date_input(
-            "Date départ (approx.)",
-            date.today() + timedelta(days=90)
-        )
-        dep_flex = st.number_input(
-            "Plage départ ± jours",
-            min_value=0, max_value=30,
-            value=1
-        )
-
-        # ---- RETOUR ----
-        return_date = st.date_input(
-            "Date retour (approx.)",
-            value=(date.today() + timedelta(days=97))
-        )
-        return_flex = st.number_input(
-            "Plage retour ± jours",
-            min_value=0, max_value=30,
-            value=1
-        )
-        return_airport = st.text_input(
-            "Aéroport retour (IATA) — vide = même",
-            ""
-        )
-
-        # ---- SÉJOUR ----
-        stay_min = st.number_input(
-            "Séjour min (jours)",
-            min_value=1, max_value=365,
-            value=6
-        )
-        stay_max = st.number_input(
-            "Séjour max (jours)",
-            min_value=1,
-            max_value=365,
-            value=10
-        )
-
-        # ---- PRIX / TRACKING ----
-        target_price = st.number_input(
-            "Seuil alerte (€)",
-            min_value=1.0,
-            value=450.0
-        )
-        tracking_per_day = st.number_input(
-            "Trackings par jour",
-            min_value=1, max_value=24,
-            value=2
-        )
-        notifications_on = st.checkbox(
-            "Activer notifications pour ce vol",
-            value=True
-        )
-
-        # ---- PREFERENCES ----
-        min_bags = st.number_input(
-            "Min bagages (préférence)",
-            min_value=0, max_value=5,
-            value=0
-        )
-        direct_only = st.checkbox(
-            "Vol direct uniquement (préférence)",
-            value=False
-        )
-        max_stops = st.selectbox(
-            "Max escales (préférence)",
-            ["any", 0, 1, 2]
-        )
-        avoid_airlines = st.text_input(
-            "Compagnies à éviter (IATA, séparées par ,)",
-            value=""
-        )
-        preferred_airlines = st.text_input(
-            "Compagnies préférées (IATA, séparées par ,)",
-            value=""
-        )
-
-        route_email = st.text_input(
-            "Email pour ce suivi (vide = email global)",
-            value=""
-        )
-
-        add_submit = st.form_submit_button("Ajouter ce suivi")
-
-    # ---- ADD NEW ROUTE ----
-    if add_submit:
-        new = {
-            "id": str(uuid.uuid4()),
-
-            "origin": origin.upper().strip(),
-            "destination": destination.upper().strip(),
-
-            "departure": departure_date.isoformat(),
-            "departure_flex_days": int(dep_flex),
-
-            "return": return_date.isoformat(),
-            "return_flex_days": int(return_flex),
-
-            "return_airport": return_airport.upper().strip() if return_airport else None,
-
-            "stay_min": int(stay_min),
-            "stay_max": int(stay_max),
-
-            "target_price": float(target_price),
-            "tracking_per_day": int(tracking_per_day),
-
-            "notifications": bool(notifications_on),
-# ============================================================
-# TAB — AJOUTER UN SUIVI
-# ============================================================
-with tab_add:
-
-    st.header("➕ Ajouter un suivi")
-
-    with st.form("form_add_new"):
-
         # ---- ORIGINES / DESTINATIONS MULTIPLES ----
         origins = st.text_area(
             "Origines (IATA, séparées par ,)", value="PAR"
@@ -679,7 +558,8 @@ with tab_add:
         st.success("Suivi(s) ajouté(s) ✔")
         st.rerun()
 
-               # ============================================================
+
+# ============================================================
 # TAB — CONFIGURATION
 # ============================================================
 with tab_config:
