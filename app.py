@@ -1,4 +1,4 @@
-# app.py - Flight Price Tracker - Multi-onglets complet
+# app.py - Flight Price Tracker - Partie 1/3
 import streamlit as st
 from datetime import date, datetime, timedelta
 import random
@@ -109,266 +109,139 @@ with tab_dashboard:
             })
         df = pd.DataFrame(df_rows)
         st.dataframe(df, use_container_width=True)
-
-        st.markdown("---")
-        for idx, r in enumerate(routes):
-            ensure_route_fields(r)
-            st.subheader(f"{r['origin']} → {r['destination']}  (id: {r['id'][:8]})")
-            cols = st.columns([2,1,1,1])
-            with cols[0]:
-                st.write(
-                    f"**Dates :** {r.get('departure')} (±{r.get('departure_flex_days',0)} j) → "
-                    f"{r.get('return')} (±{r.get('return_flex_days',0)} j)\n\n"
-                    f"**Séjour :** {r.get('stay_min')}–{r.get('stay_max')} j\n\n"
-                    f"**Seuil :** {r.get('target_price')}€\n\n"
-                    f"**Email :** {r.get('email') or email_cfg.get('email','—')}"
-                )
-            with cols[1]:
-                if st.button("Update", key=f"dash_update_{idx}"):
-                    price = random.randint(120,1000)
-                    r.setdefault("history", []).append({"date": datetime.now().isoformat(), "price": price})
-                    r["last_tracked"] = datetime.now().isoformat()
-                    save_routes(routes)
-                    append_log(f"{datetime.now().isoformat()} - Manual update {r['id']} price={price}")
-                    st.rerun()
-            with cols[2]:
-                if r.get("notifications"):
-                    if st.button("Désactiver notif", key=f"dash_notif_off_{idx}"):
-                        r["notifications"] = False
-                        save_routes(routes)
-                        append_log(f"{datetime.now().isoformat()} - Notifications OFF {r['id']}")
-                        st.rerun()
-                else:
-                    if st.button("Activer notif", key=f"dash_notif_on_{idx}"):
-                        r["notifications"] = True
-                        save_routes(routes)
-                        append_log(f"{datetime.now().isoformat()} - Notifications ON {r['id']}")
-                        st.rerun()
-            with cols[3]:
-                if st.button("Supprimer", key=f"dash_del_{idx}"):
-                    append_log(f"{datetime.now().isoformat()} - Delete route {r['id']}")
-                    routes.pop(idx)
-                    save_routes(routes)
-                    st.rerun()
-
-            # small actions
-            a1, a2, a3 = st.columns([1,1,1])
-            with a1:
-                if st.button("Test mail", key=f"dash_testmail_{idx}"):
-                    rcpt = r.get("email") or email_cfg.get("email","")
-                    if not rcpt:
-                        st.warning("Aucune adresse email configurée.")
-                    else:
-                        ok, status = send_email(rcpt, f"Test alerte {r['origin']}→{r['destination']}", "<p>Test</p>")
-                        st.info("Email envoyé" if ok else f"Erreur (status {status})")
-                        append_log(f"{datetime.now().isoformat()} - Test mail {r['id']} -> {rcpt} ok={ok} status={status}")
-            with a2:
-                st.write(f"Last tracked: {r.get('last_tracked') or 'Never'}")
-            with a3:
-                st.write(f"Updates(24h): {count_updates_last_24h(r)}")
-
-            # history
-            if r.get("history"):
-                fig = plot_price_history(r["history"])
-                st.pyplot(fig)
-            else:
-                st.info("Aucun historique pour ce vol.")
-
-            # edit form
-            with st.expander("✏️ Editer"):
-                with st.form(key=f"dash_form_{r['id']}"):
-                    origin_e = st.text_input("Origine", value=r.get("origin"))
-                    dest_e = st.text_input("Destination", value=r.get("destination"))
-                    dep_default = safe_iso_to_datetime(r.get("departure"))
-                    dep_default_date = dep_default.date() if dep_default else date.today()
-                    departure_e = st.date_input("Date départ", value=dep_default_date)
-                    depflex = st.number_input("Flex départ ± jours", min_value=0, max_value=30, value=int(r.get("departure_flex_days",0)))
-                    stay_min_e = st.number_input("Séjour min", min_value=1, max_value=365, value=int(r.get("stay_min",1)))
-                    stay_max_e = st.number_input("Séjour max", min_value=1, max_value=365, value=int(r.get("stay_max",1)))
-                    target_e = st.number_input("Seuil (€)", min_value=1.0, value=float(r.get("target_price",100.0)))
-                    tracking_pd_e = st.number_input("Trackings/jour", min_value=1, max_value=24, value=int(r.get("tracking_per_day",1)))
-                    notif_e = st.checkbox("Activer notifications", value=bool(r.get("notifications", False)))
-                    min_bags_e = st.number_input("Min bagages", min_value=0, max_value=5, value=int(r.get("min_bags",0)))
-                    direct_only_e = st.checkbox("Vol direct uniquement", value=bool(r.get("direct_only",False)))
-                    max_stops_e = st.selectbox("Max escales", ["any", 0,1,2], index=["any",0,1,2].index(r.get("max_stops","any")))
-                    avoid_airlines_e = st.text_input("Compagnies à éviter (IATA, , séparées)", value=",".join(r.get("avoid_airlines",[])))
-                    preferred_airlines_e = st.text_input("Compagnies préférées (IATA, , séparées)", value=",".join(r.get("preferred_airlines",[])))
-                    email_e = st.text_input("Email pour ce suivi (vide = global)", value=r.get("email",""))
-
-                    submit = st.form_submit_button("Enregistrer")
-                if submit:
-                    r.update({
-                        "origin": origin_e.upper(),
-                        "destination": dest_e.upper(),
-                        "departure": str(departure_e),
-                        "departure_flex_days": int(depflex),
-                        "stay_min": int(stay_min_e),
-                        "stay_max": int(stay_max_e),
-                        "target_price": float(target_e),
-                        "tracking_per_day": int(tracking_pd_e),
-                        "notifications": bool(notif_e),
-                        "min_bags": int(min_bags_e),
-                        "direct_only": bool(direct_only_e),
-                        "max_stops": max_stops_e,
-                        "avoid_airlines": [a.strip().upper() for a in avoid_airlines_e.split(",") if a.strip()],
-                        "preferred_airlines": [a.strip().upper() for a in preferred_airlines_e.split(",") if a.strip()],
-                        "email": email_e.strip()
-                    })
-                    save_routes(routes)
-                    append_log(f"{datetime.now().isoformat()} - Edited {r['id']}")
-                    st.success("Modifications enregistrées")
-                    st.rerun()
-
-            st.markdown("---")
-
-# ---------------- ADD ----------------
+# ---------------- AJOUTER UN SUIVI ----------------
 with tab_add:
-    st.header("➕ Ajouter un suivi")
-    with st.form("form_add"):
-        origin = st.text_input("Origine (IATA)", value="PAR")
-        destination = st.text_input("Destination (IATA)", value="TYO")
-        departure_date = st.date_input("Date départ (approx.)", date.today() + timedelta(days=90))
-        dep_flex = st.number_input("Plage départ ± jours", min_value=0, max_value=30, value=1)
-        return_airport = st.text_input("Aéroport retour (IATA) - vide = même", "")
-        stay_min = st.number_input("Séjour min (jours)", min_value=1, max_value=365, value=6)
-        stay_max = st.number_input("Séjour max (jours)", min_value=1, max_value=365, value=10)
-        return_flex = st.number_input("Plage retour ± jours", min_value=0, max_value=30, value=1)
-        target_price = st.number_input("Seuil alerte (€)", min_value=1.0, value=450.0, step=1.0)
-        tracking_per_day = st.number_input("Trackings par jour", min_value=1, max_value=24, value=2)
-        notifications_on = st.checkbox("Activer notifications", value=True)
-        min_bags = st.number_input("Min bagages (préférence)", min_value=0, max_value=5, value=0)
-        direct_only = st.checkbox("Vol direct uniquement", value=False)
-        max_stops = st.selectbox("Max escales", ["any", 0, 1, 2])
-        avoid_airlines = st.text_input("Compagnies à éviter (IATA, séparées par ,)", value="")
-        preferred_airlines = st.text_input("Compagnies préférées (IATA, séparées par ,)", value="")
-        route_email = st.text_input("Email pour ce suivi (laisser vide = email global)", "")
+    st.header("➕ Ajouter / Éditer un suivi")
+    with st.form("add_route_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            origin = st.text_input("Aéroport de départ (code IATA)", max_chars=3)
+            departure = st.date_input("Date de départ", value=date.today())
+            notifications = st.checkbox("Activer notifications", value=True)
+        with col2:
+            destination = st.text_input("Aéroport d'arrivée (code IATA)", max_chars=3)
+            return_date = st.date_input("Date de retour (optionnelle)", value=None)
+            target_price = st.number_input("Prix cible (€)", min_value=0, value=300)
 
-        add_submit = st.form_submit_button("Ajouter le suivi")
-    if add_submit:
-        new = {
-            "id": str(uuid.uuid4()),
-            "origin": origin.upper(),
-            "destination": destination.upper(),
-            "departure": str(departure_date),
-            "departure_flex_days": int(dep_flex),
-            "return": str((departure_date + timedelta(days=stay_min))),
-            "return_airport": (return_airport.upper() if return_airport else None),
-            "stay_min": int(stay_min),
-            "stay_max": int(stay_max),
-            "return_flex_days": int(return_flex),
-            "target_price": float(target_price),
-            "tracking_per_day": int(tracking_per_day),
-            "notifications": bool(notifications_on),
-            "min_bags": int(min_bags),
-            "direct_only": bool(direct_only),
-            "max_stops": max_stops,
-            "avoid_airlines": [a.strip().upper() for a in avoid_airlines.split(",") if a.strip()],
-            "preferred_airlines": [a.strip().upper() for a in preferred_airlines.split(",") if a.strip()],
-            "email": route_email.strip(),
-            "history": [],
-            "last_tracked": None,
-            "stats": {}
-        }
-        routes.append(new)
-        save_routes(routes)
-        append_log(f"{datetime.now().isoformat()} - Added route {new['id']}")
-        st.success("Vol ajouté ✔")
-        st.rerun()
-
-# ---------------- CONFIG ----------------
-with tab_config:
-    st.header("⚙️ Configuration")
-    st.subheader("Paramètres email")
-    global_email = st.text_input("Email global", value=email_cfg.get("email",""))
-    global_enabled = st.checkbox("Activer notifications globales", value=email_cfg.get("enabled", False))
-    if st.button("Enregistrer config email"):
-        save_email_config({"email": global_email, "enabled": bool(global_enabled)})
-        append_log(f"{datetime.now().isoformat()} - Saved email config")
-        st.success("Configuration enregistrée")
-        st.rerun()
-
-    st.markdown("---")
-    st.subheader("Test email")
-    test_email = st.text_input("Adresse test", value=global_email or "")
-    if st.button("Envoyer email de test"):
-        if not test_email:
-            st.warning("Renseigne une adresse de test.")
-        else:
-            ok, status = send_email(test_email, "Test - Flight Price Tracker", "<p>Test d'envoi</p>")
-            st.success("Email envoyé ✔" if ok else f"Erreur d'envoi — status: {status}")
-            append_log(f"{datetime.now().isoformat()} - Test email to={test_email} ok={ok} status={status}")
-
-# ---------------- SEARCH & SUGGEST ----------------
-with tab_search:
-    st.header("🔎 Recherche & Suggestions (Simulation)")
-    with st.expander("Paramètres recherche"):
-        origins_input = st.text_input("Origines (IATA, séparées par ,)", value="PAR,CDG,ORY")
-        destinations_input = st.text_input("Destinations (IATA, séparées par ,)", value="NRT,HND,KIX")
-        start_date = st.date_input("Date départ approximative (optionnelle)", date.today() + timedelta(days=90))
-        search_window_days = st.number_input("Plage recherche ± jours", min_value=0, max_value=30, value=7)
-        stay_days = st.number_input("Durée séjour (jours)", min_value=1, max_value=60, value=7)
-        samples_per_option = st.number_input("Échantillons par combo (simu)", min_value=3, max_value=30, value=8)
-
-        if st.button("Lancer recherche (simu)"):
-            origins = [o.strip().upper() for o in origins_input.split(",") if o.strip()]
-            dests = [d.strip().upper() for d in destinations_input.split(",") if d.strip()]
-            results = []
-            for origin in origins:
-                for dest in dests:
-                    for delta in range(-search_window_days, search_window_days + 1):
-                        dep = start_date + timedelta(days=delta)
-                        for s in range(samples_per_option):
-                            price = random.randint(120, 1200)
-                            results.append({
-                                "origin": origin,
-                                "destination": dest,
-                                "departure": dep.isoformat(),
-                                "stay_days": int(stay_days),
-                                "price": price
-                            })
-            df_res = pd.DataFrame(results)
-            st.session_state["last_search"] = df_res
-            st.success(f"Recherche simulée : {len(df_res)} résultats générés.")
-
-    if "last_search" in st.session_state:
-        df_res = st.session_state["last_search"]
-        bests = df_res.loc[df_res.groupby(["origin", "destination"])["price"].idxmin()]
-        st.subheader("Meilleurs résultats par origine-destination")
-        st.dataframe(bests.sort_values("price").reset_index(drop=True), use_container_width=True)
-
-        cheapest = df_res.nsmallest(10, "price")
-        st.subheader("Top 10 vols les moins chers")
-        st.dataframe(cheapest.reset_index(drop=True), use_container_width=True)
-
-        st.markdown("---")
-        with st.expander("Ajouter un vol depuis la recherche"):
-            sel_idx = st.multiselect("Sélectionne les vols à ajouter", df_res.index)
-            if st.button("Ajouter les vols sélectionnés"):
-                for idx in sel_idx:
-                    row = df_res.loc[idx]
-                    new = {
-                        "id": str(uuid.uuid4()),
-                        "origin": row["origin"],
-                        "destination": row["destination"],
-                        "departure": row["departure"],
-                        "return": (datetime.fromisoformat(row["departure"]) + timedelta(days=row["stay_days"])).isoformat(),
-                        "stay_min": row["stay_days"],
-                        "stay_max": row["stay_days"],
-                        "target_price": row["price"],
-                        "tracking_per_day": 1,
-                        "notifications": True,
-                        "min_bags": 0,
-                        "direct_only": False,
-                        "max_stops": "any",
-                        "avoid_airlines": [],
-                        "preferred_airlines": [],
-                        "email": "",
-                        "history": [],
-                        "last_tracked": None
-                    }
-                    routes.append(new)
-                    append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+        submit = st.form_submit_button("Ajouter suivi")
+        if submit:
+            if not origin or not destination:
+                st.warning("Merci de renseigner les deux aéroports.")
+            else:
+                route = {
+                    "id": str(uuid.uuid4()),
+                    "origin": origin.upper(),
+                    "destination": destination.upper(),
+                    "departure": departure.isoformat(),
+                    "return": return_date.isoformat() if return_date else None,
+                    "target_price": target_price,
+                    "notifications": notifications,
+                    "history": [],
+                    "email": email_cfg.get("email")
+                }
+                ensure_route_fields(route)
+                routes.append(route)
                 save_routes(routes)
-                st.success(f"{len(sel_idx)} vol(s) ajouté(s).")
+                append_log(f"{datetime.now().isoformat()} - Ajout suivi {origin}-{destination}")
+                st.success(f"Suivi ajouté pour {origin} → {destination}")
                 st.rerun()
-            
+
+# ---------------- CONFIGURATION ----------------
+with tab_config:
+    st.header("⚙️ Configuration globale")
+    email = st.text_input("Email pour notifications", value=email_cfg.get("email", ""))
+    global_notifications = st.checkbox("Notifications globales ON/OFF", value=email_cfg.get("global_notifications", True))
+    
+    if st.button("Sauvegarder configuration"):
+        email_cfg["email"] = email
+        email_cfg["global_notifications"] = global_notifications
+        save_email_config(email_cfg)
+        st.success("Configuration enregistrée.")
+    
+    st.markdown("---")
+    st.subheader("Test envoi email")
+    if st.button("Envoyer email test"):
+        if send_email(email, "Test Notification", "Ceci est un test."):
+            st.success(f"Email envoyé avec succès à {email}")
+        else:
+            st.error("Échec de l'envoi de l'email")
+
+# ---------------- GESTION DES SUIVIS ----------------
+st.sidebar.header("🔧 Gestion rapide des suivis")
+if routes:
+    for r in routes:
+        with st.sidebar.expander(f"{r['origin']} → {r['destination']}"):
+            st.text(f"Target: {r.get('target_price')}€ | Notifications: {'ON' if r.get('notifications') else 'OFF'}")
+            if st.button(f"Supprimer {r['origin']}-{r['destination']}", key=f"del_{r['id']}"):
+                routes.remove(r)
+                save_routes(routes)
+                append_log(f"{datetime.now().isoformat()} - Suppression {r['origin']}-{r['destination']}")
+                st.experimental_rerun()
+            if st.button(f"Activer/Désactiver notif", key=f"notif_{r['id']}"):
+                r["notifications"] = not r.get("notifications", True)
+                save_routes(routes)
+                st.experimental_rerun()
+            if st.button(f"Mettre à jour prix (simu)", key=f"update_{r['id']}"):
+                price = random.randint(120, 1000)
+                r.setdefault("history", []).append({"date": datetime.now().isoformat(), "price": price})
+                r["last_tracked"] = datetime.now().isoformat()
+                save_routes(routes)
+                append_log(f"{datetime.now().isoformat()} - Update simu {r['origin']}-{r['destination']}")
+                st.experimental_rerun()
+        # ---------------- SUGGESTIONS / RECHERCHE ----------------
+with tab_suggest:
+    st.header("💡 Suggestions & Recherche")
+    
+    search_origin = st.text_input("Aéroport de départ", max_chars=3, key="search_origin")
+    search_destination = st.text_input("Aéroport d'arrivée (optionnel)", max_chars=3, key="search_dest")
+    search_departure = st.date_input("Date de départ", value=None, key="search_departure")
+    search_return = st.date_input("Date de retour (optionnelle)", value=None, key="search_return")
+    max_duration = st.number_input("Durée max du séjour (jours, optionnel si pas de date de retour)", min_value=0, value=0)
+    
+    if st.button("Chercher"):
+        st.subheader("Résultats")
+        results = []
+        for r in routes:
+            # Filtrage de base
+            if search_origin and r["origin"] != search_origin.upper():
+                continue
+            if search_destination and r["destination"] != search_destination.upper():
+                continue
+            # Date de départ
+            if search_departure and r["departure"] != search_departure.isoformat():
+                continue
+            # Durée si pas de date de retour
+            if search_return:
+                if r.get("return") != search_return.isoformat():
+                    continue
+            elif max_duration > 0 and r.get("return"):
+                dep_date = datetime.fromisoformat(r["departure"])
+                ret_date = datetime.fromisoformat(r["return"])
+                duration = (ret_date - dep_date).days
+                if duration > max_duration:
+                    continue
+            results.append(r)
+        
+        if results:
+            for r in results:
+                st.markdown(f"**{r['origin']} → {r['destination']}**")
+                last_price = r.get("history")[-1]["price"] if r.get("history") else "N/A"
+                st.text(f"Dernier prix connu: {last_price}€ | Notifications: {'ON' if r.get('notifications') else 'OFF'}")
+                
+                # Graphique historique
+                if r.get("history"):
+                    df_hist = pd.DataFrame(r["history"])
+                    df_hist["date"] = pd.to_datetime(df_hist["date"])
+                    st.line_chart(df_hist.set_index("date")["price"])
+        else:
+            st.info("Aucun suivi ne correspond aux critères.")
+
+# ---------------- LOG ----------------
+with tab_logs:
+    st.header("📝 Logs")
+    if logs:
+        for log in reversed(logs[-50:]):
+            st.text(log)
+    else:
+        st.text("Aucun log pour le moment.")
+                
