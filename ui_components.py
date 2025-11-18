@@ -1,65 +1,49 @@
 import streamlit as st
-from datetime import date, datetime, timedelta
 import random
-import uuid
-import pandas as pd
-from utils.storage import ensure_route_fields, sanitize_dict
+from datetime import datetime, timedelta, date
+from utils.storage import save_routes, ensure_route_fields, append_log, sanitize_dict
 from utils.plotting import plot_price_history
-from exporters import export_csv, export_pdf, export_xlsx
 from utils.email_utils import send_email
+import uuid
 
-# --- helpers ---
-def safe_iso_to_datetime(val):
-    if val is None:
-        return None
-    if isinstance(val, datetime):
-        return val
-    if isinstance(val, date):
-        return datetime.combine(val, datetime.min.time())
-    if isinstance(val, str) and val.strip():
-        try:
-            return datetime.fromisoformat(val)
-        except Exception:
-            for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
-                try:
-                    return datetime.strptime(val, fmt)
-                except Exception:
-                    continue
-    return None
-
-def file_bytes_for_path(path):
-    with open(path, "rb") as f:
-        return f.read()
-
-# --- top bar ---
+# ------------------------------------------------------------
+# TOP BAR (mise à jour globale + export)
+# ------------------------------------------------------------
 def render_top_bar(routes):
     col1, col2, col3 = st.columns([1,2,1])
     with col1:
         if st.button("Mettre à jour tous (simu)"):
             for r in routes:
                 price = random.randint(120, 1000)
-                r.setdefault("history", []).append({"date": datetime.now().isoformat(), "price": price})
+                r.setdefault("history", []).append(
+                    {"date": datetime.now().isoformat(), "price": price}
+                )
                 r["last_tracked"] = datetime.now().isoformat()
+            save_routes(routes)
+            append_log(f"{datetime.now().isoformat()} - Bulk update (simu)")
             st.success("Mise à jour globale simulée.")
             st.experimental_rerun()
+    # Export
     with col3:
-        if st.button("Exporter CSV"):
-            path = export_csv(routes, path="export.csv")
-            st.download_button("Télécharger CSV", data=file_bytes_for_path(path), file_name="export.csv")
-        if st.button("Exporter PDF"):
-            path = export_pdf(routes, path="export.pdf")
-            st.download_button("Télécharger PDF", data=file_bytes_for_path(path), file_name="export.pdf")
-        if st.button("Exporter XLSX"):
-            path = export_xlsx(routes, path="export.xlsx")
-            st.download_button("Télécharger XLSX", data=file_bytes_for_path(path), file_name="export.xlsx")
+        st.write("Export options can be added here (CSV/PDF/XLSX)")
 
-# --- dashboard tab ---
+# ------------------------------------------------------------
+# DASHBOARD
+# ------------------------------------------------------------
 def render_dashboard(routes, email_cfg):
     st.header("📊 Dashboard — Récapitulatif des suivis")
     if not routes:
         st.info("Aucun suivi pour l'instant.")
         return
 
+    # Metrics
+    total = len(routes)
+    notif_on = sum(1 for r in routes if r.get("notifications"))
+    st.metric("Suivis", total)
+    st.metric("Notifications ON", notif_on)
+    st.markdown("---")
+
+    # Table récap
     df_rows = []
     for r in routes:
         last_price = r.get("history")[-1]["price"] if r.get("history") else None
@@ -76,78 +60,141 @@ def render_dashboard(routes, email_cfg):
             "notif": "ON" if r.get("notifications") else "OFF",
             "email": r.get("email") or email_cfg.get("email", "")
         })
-    df = pd.DataFrame(df_rows)
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df_rows, use_container_width=True)
+    st.markdown("---")
 
+    # Panels par route
     for idx, r in enumerate(routes):
         ensure_route_fields(r)
         st.subheader(f"{r['origin']} → {r['destination']}  (id: {r['id'][:8]})")
+        cols = st.columns([2,1,1,1])
+        # LEFT COLUMN INFO
+        with cols[0]:
+            st.write(
+                f"**Dates :** {r.get('departure')} (±{r.get('departure_flex_days',0)} j) → "
+                f"{r.get('return') or '—'} (±{r.get('return_flex_days',0)} j)\n\n"
+                f"**Séjour :** {r.get('stay_min')}–{r.get('stay_max')} j\n\n"
+                f"**Seuil :** {r.get('target_price')}€\n\n"
+                f"**Email :** {r.get('email') or email_cfg.get('email','—')}"
+            )
+        # UPDATE BUTTON
+        with cols[1]:
+            if st.button("Update", key=f"dash_update_{idx}"):
+                price = random.randint(120, 1000)
+                r.setdefault("history", []).append(
+                    {"date": datetime.now().isoformat(), "price": price}
+                )
+                r["last_tracked"] = datetime.now().isoformat()
+                save_routes(routes)
+                append_log(f"{datetime.now().isoformat()} - Manual update {r['id']} price={price}")
+                st.experimental_rerun()
+        # Notifications
+        with cols[2]:
+            if r.get("notifications"):
+                if st.button("Désactiver notif", key=f"dash_notif_off_{idx}"):
+                    r["notifications"] = False
+                    save_routes(routes)
+                    append_log(f"{datetime.now().isoformat()} - Notifications OFF {r['id']}")
+                    st.experimental_rerun()
+            else:
+                if st.button("Activer notif", key=f"dash_notif_on_{idx}"):
+                    r["notifications"] = True
+                    save_routes(routes)
+                    append_log(f"{datetime.now().isoformat()} - Notifications ON {r['id']}")
+                    st.experimental_rerun()
+        # DELETE BUTTON
+        with cols[3]:
+            if st.button("Supprimer", key=f"dash_del_{idx}"):
+                append_log(f"{datetime.now().isoformat()} - Delete route {r['id']}")
+                routes.pop(idx)
+                save_routes(routes)
+                st.experimental_rerun()
+        # PRICE HISTORY
+        if r.get("history"):
+            fig = plot_price_history(r["history"])
+            st.pyplot(fig)
+        else:
+            st.info("Aucun historique pour ce vol.")
+
+        # EDIT ROUTE (FULL FORM)
         with st.expander("✏️ Éditer ce suivi"):
             with st.form(key=f"dash_form_{r['id']}"):
-                dep_dt_default = safe_iso_to_datetime(r.get("departure"))
-                dep_default = dep_dt_default.date() if dep_dt_default else date.today()
+                # Dates
+                dep_dt_default = datetime.fromisoformat(r.get("departure")) if r.get("departure") else date.today()
+                dep_default = dep_dt_default.date() if isinstance(dep_dt_default, datetime) else dep_dt_default
                 departure_e = st.date_input("Date départ", value=dep_default)
-                depflex = st.number_input("Flex départ ± jours", 0, 30, int(r.get("departure_flex_days",0)))
-
-                ret_dt_default = safe_iso_to_datetime(r.get("return"))
-                return_e = st.date_input("Date retour (optionnelle)", value=ret_dt_default.date() if ret_dt_default else None)
-                return_flex_e = st.number_input("Flex retour ± jours", 0, 30, int(r.get("return_flex_days",0)))
-
-                stay_min_e = st.number_input("Séjour min (jours)", 1, 365, int(r.get("stay_min",1)))
-                stay_max_e = st.number_input("Séjour max (jours)", 1, 365, int(r.get("stay_max",1)))
-
-                target_e = st.number_input("Seuil alerte (€)", 1.0, 10000.0, float(r.get("target_price",100)))
+                depflex = st.number_input("Flex départ ± jours", min_value=0,max_value=30,value=int(r.get("departure_flex_days",0)))
+                # Retour optionnel
+                return_dt_default = datetime.fromisoformat(r.get("return")) if r.get("return") else None
+                return_default = return_dt_default.date() if return_dt_default else None
+                return_e = st.date_input("Date retour (optionnelle)", value=return_default)
+                return_flex_e = st.number_input("Flex retour ± jours", min_value=0,max_value=30,value=int(r.get("return_flex_days",0)))
+                # Séjour si pas de retour
+                stay_min_e = st.number_input("Séjour min (jours)", min_value=1,max_value=365,value=int(r.get("stay_min",1)))
+                stay_max_e = st.number_input("Séjour max (jours)", min_value=1,max_value=365,value=int(r.get("stay_max",1)))
+                # Prix
+                target_e = st.number_input("Seuil alerte (€)", min_value=1.0,value=float(r.get("target_price",100)))
+                tracking_pd_e = st.number_input("Trackings/jour", min_value=1,max_value=24,value=int(r.get("tracking_per_day",1)))
                 notif_e = st.checkbox("Activer notifications", value=bool(r.get("notifications",False)))
                 email_e = st.text_input("Email pour ce suivi", value=r.get("email",""))
-
-                submit_edit = st.form_submit_button("Enregistrer")
+                # Préférences
+                min_bags_e = st.number_input("Min bagages", min_value=0,max_value=5,value=int(r.get("min_bags",0)))
+                direct_only_e = st.checkbox("Vol direct uniquement", value=r.get("direct_only",False))
+                max_stops_e = st.selectbox("Max escales", ["any",0,1,2], index=["any",0,1,2].index(r.get("max_stops","any")))
+                avoid_e = st.text_input("Compagnies à éviter", value=",".join(r.get("avoid_airlines",[])))
+                pref_e = st.text_input("Compagnies préférées", value=",".join(r.get("preferred_airlines",[])))
+                submit_edit = st.form_submit_button("Enregistrer modifications")
             if submit_edit:
                 r["departure"] = departure_e.isoformat()
-                r["departure_flex_days"] = depflex
-                if return_e:
-                    r["return"] = return_e.isoformat()
-                else:
-                    # ajustement automatique de la durée si pas de retour
-                    r["return"] = (departure_e + timedelta(days=stay_min_e)).isoformat()
-                r["return_flex_days"] = return_flex_e
-                r["stay_min"] = stay_min_e
-                r["stay_max"] = stay_max_e
-                r["target_price"] = target_e
-                r["notifications"] = notif_e
+                r["departure_flex_days"] = int(depflex)
+                r["return"] = return_e.isoformat() if return_e else None
+                r["return_flex_days"] = int(return_flex_e)
+                r["stay_min"] = int(stay_min_e)
+                r["stay_max"] = int(stay_max_e)
+                r["target_price"] = float(target_e)
+                r["tracking_per_day"] = int(tracking_pd_e)
+                r["notifications"] = bool(notif_e)
                 r["email"] = email_e.strip()
-                st.success("Modifications enregistrées.")
+                r["min_bags"] = int(min_bags_e)
+                r["direct_only"] = bool(direct_only_e)
+                r["max_stops"] = max_stops_e
+                r["avoid_airlines"] = [a.strip().upper() for a in avoid_e.split(",") if a.strip()]
+                r["preferred_airlines"] = [a.strip().upper() for a in pref_e.split(",") if a.strip()]
+                save_routes(routes)
+                append_log(f"{datetime.now().isoformat()} - Edited route {r['id']}")
+                st.success("Modifications enregistrées")
                 st.experimental_rerun()
 
-# --- search tab ---
+# ------------------------------------------------------------
+# SEARCH TAB (ADD FROM SUGGESTIONS)
+# ------------------------------------------------------------
 def render_search_tab(df_res, routes):
-    st.header("🔎 Recherche & Suggestions")
-    if df_res is None:
-        st.info("Aucune recherche effectuée.")
+    st.subheader("➕ Ajouter un ou plusieurs résultats comme suivi")
+    if df_res.empty:
+        st.info("Aucun résultat de recherche")
         return
-
     with st.form("add_from_search"):
+        # Multi-select via IDs
         selected_ids = st.multiselect(
             "Sélectionner les résultats à ajouter",
-            options=df_res["id"].tolist(),
-            format_func=lambda x: f"{x} — {df_res.loc[df_res['id']==x, 'origin'].values[0]} → {df_res.loc[df_res['id']==x,'destination'].values[0]}"
+            options=list(df_res["id"]),
+            format_func=lambda x: f"{df_res.loc[df_res['id']==x,'origin'].values[0]} → {df_res.loc[df_res['id']==x,'destination'].values[0]} ({df_res.loc[df_res['id']==x,'departure'].values[0]})"
         )
         add_submit = st.form_submit_button("Ajouter")
-
     if add_submit and selected_ids:
-        created = 0
         for sid in selected_ids:
-            row = df_res.loc[df_res["id"]==sid].iloc[0]
+            row = df_res[df_res["id"]==sid].iloc[0]
             new = {
                 "id": str(uuid.uuid4()),
                 "origin": row["origin"],
                 "destination": row["destination"],
                 "departure": row["departure"],
-                "return": row.get("return", None),
+                "return": None,
                 "departure_flex_days": 0,
                 "return_flex_days": 0,
-                "stay_min": int(row.get("stay_days",7)),
-                "stay_max": int(row.get("stay_days",7)),
-                "target_price": float(row.get("price",100)*0.9),
+                "stay_min": int(row.get("stay_days",1)),
+                "stay_max": int(row.get("stay_days",1)),
+                "target_price": float(row["price"])*0.9,
                 "tracking_per_day": 2,
                 "notifications": False,
                 "email": "",
@@ -156,11 +203,12 @@ def render_search_tab(df_res, routes):
                 "max_stops": "any",
                 "avoid_airlines": [],
                 "preferred_airlines": [],
-                "history": [{"date": datetime.now().isoformat(), "price": int(row.get("price",100))}],
+                "history": [{"date": datetime.now().isoformat(), "price": int(row["price"])}],
                 "last_tracked": datetime.now().isoformat(),
                 "stats": {}
             }
             routes.append(sanitize_dict(new))
-            created += 1
-        st.success(f"{created} suivi(s) ajouté(s)")
+            append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
+        save_routes(routes)
+        st.success(f"{len(selected_ids)} suivi(s) ajouté(s)")
         st.experimental_rerun()
