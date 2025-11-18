@@ -24,40 +24,28 @@ from utils.storage import (
     sanitize_dict
 )
 
-# Chargement des données
+# -----------------------------
+# INITIALISATION
+# -----------------------------
+ensure_data_file()
 routes = load_routes()
 email_cfg = load_email_config()
 
 # -----------------------------
-# Sidebar - Navigation
-# -----------------------------
-st.sidebar.title("Navigation")
-tab = st.sidebar.radio("Aller à :", [
-    "Dashboard",
-    "Ajouter un suivi",
-    "Recherche / Simulation",
-    "Configuration"
-])
-
-# -----------------------------
-# Top bar
+# UI PRINCIPAL
 # -----------------------------
 render_top_bar(routes, email_cfg)
 
-# -----------------------------
-# Onglets principaux
-# -----------------------------
-if tab == "Dashboard":
-    render_dashboard(routes, email_cfg)
-    # Optionnel : éditer un suivi depuis le dashboard
-    for r in routes:
-        render_edit_route(r, routes, email_cfg)
+tab = st.sidebar.radio(
+    "Onglets",
+    ["Dashboard", "Ajouter un suivi", "Recherche / Simulation", "Configuration"]
+)
 
+if tab == "Dashboard":
+    render_dashboard(routes, email_cfg, global_notif_enabled=email_cfg.get("enabled", False))
 elif tab == "Ajouter un suivi":
     render_add_tab(routes)
-
 elif tab == "Recherche / Simulation":
     render_search_tab(routes)
-
 elif tab == "Configuration":
     render_config_tab()
