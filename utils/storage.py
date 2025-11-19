@@ -1,154 +1,249 @@
 # utils/storage.py
 import json
 import os
-import uuid
+import subprocess
 from datetime import datetime, timedelta
+from typing import List, Dict, Any
 
-DATA_FILE = "data/routes.json"
-EMAIL_CFG_FILE = "data/email_config.json"
-LOG_FILE = "data/log.txt"
+DATA_DIR = "."  # ou "./data" si tu utilises un dossier data/
+ROUTES_FILE = os.path.join(DATA_DIR, "routes.json")
+EMAIL_CFG_FILE = os.path.join(DATA_DIR, "email_config.json")
+LOG_FILE = os.path.join(DATA_DIR, "last_updates.log")
+
+
+def _atomic_write(path: str, data_bytes: bytes):
+    tmp = f"{path}.tmp"
+    with open(tmp, "wb") as f:
+        f.write(data_bytes)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
 
 def ensure_data_file():
-    os.makedirs("data", exist_ok=True)
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w") as f:
-            json.dump([], f)
-    if not os.path.exists(EMAIL_CFG_FILE):
-        with open(EMAIL_CFG_FILE, "w") as f:
-            json.dump({"enabled": False, "email": "", "api_user": "", "api_pass": ""}, f)
-    if not os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "w") as f:
-            f.write("")
-
-def load_routes():
-    ensure_data_file()
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_routes(routes):
-    with open(DATA_FILE, "w") as f:
-        json.dump(routes, f, indent=2)
-
-def load_email_config():
-    ensure_data_file()
-    with open(EMAIL_CFG_FILE, "r") as f:
-        return json.load(f)
-
-def save_email_config(cfg):
-    ensure_data_file()
-    with open(EMAIL_CFG_FILE, "w") as f:
-        json.dump(cfg, f, indent=2)
-
-def append_log(msg):
-    ensure_data_file()
-    with open(LOG_FILE, "a") as f:
-        f.write(msg + "\n")
-
-def count_updates_last_24h(route):
-    now = datetime.now()
-    count = 0
-    for h in route.get("history", []):
+    if not os.path.exists(DATA_DIR):
         try:
-            d = datetime.fromisoformat(h["date"])
+            os.makedirs(DATA_DIR, exist_ok=True)
+        except Exception:
+            pass
+    if not os.path.exists(ROUTES_FILE):
+        _atomic_write(ROUTES_FILE, b"[]")
+    if not os.path.exists(EMAIL_CFG_FILE):
+        _atomic_write(EMAIL_CFG_FILE, json.dumps({"enabled": False, "email": "", "api_user": "", "api_pass": ""}).encode("utf-8"))
+    if not os.path.exists(LOG_FILE):
+        open(LOG_FILE, "a").close()
+
+
+def load_routes() -> List[Dict[str, Any]]:
+    try:
+        with open(ROUTES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except FileNotFoundError:
+        return []
+    except Exception:
+        try:
+            ts = datetime.now().strftime("%Y%m%d%H%M%S")
+            bad = f"{ROUTES_FILE}.broken.{ts}"
+            os.replace(ROUTES_FILE, bad)
+        except Exception:
+            pass
+        return []
+
+
+def _git_commit_and_push_if_enabled(path: str, commit_msg: str = None):
+    """
+    Optionally commit & push changes to the repo if environment variables are set.
+    Variables:
+      - GIT_PUSH = "1" or "true" to enable
+      - GIT_PUSH_TOKEN = personal access token or GitHub Actions token
+      - GITHUB_REPOSITORY = "owner/repo" (optional; read from env in GH actions)
+    This function is tolerant: on any error it logs to stderr but does NOT raise.
+    """
+    try:
+        enabled = os.environ.get("GIT_PUSH", "").lower() in ("1", "true", "yes")
+        token = os.environ.get("GIT_PUSH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        repo = os.environ.get("GITHUB_REPOSITORY")  # owner/repo
+
+        if not enabled or not token:
+            return False, "git push not enabled or no token"
+
+        # Determine repo remote URL
+        # If running inside a git repo, get origin URL to detect owner/repo fallback
+        if not repo:
+            try:
+                res = subprocess.run(["git", "config", "--get", "remote.origin.url"],
+                                     capture_output=True, text=True, check=False)
+                origin = (res.stdout or "").strip()
+                # try to parse origin for owner/repo
+                if origin:
+                    # support https and git@ forms
+                    if origin.startswith("git@"):
+                        # git@github.com:owner/repo.git
+                        origin = origin.split(":", 1)[1]
+                    if origin.endswith(".git"):
+                        origin = origin[:-4]
+                    repo = origin
+            except Exception:
+                repo = None
+
+        if not repo:
+            # If still unknown, cannot push securely
+            return False, "repo unknown"
+
+        # Build https remote using token (note: token appears in process args -> keep minimal)
+        remote_with_token = f"https://{token}@github.com/{repo}.git"
+
+        # git add path, commit, push using subprocess
+        # Use a temporary remote name to avoid altering origin
+        remote_name = "autopush-temp-remote"
+
+        # Add remote
+        subprocess.run(["git", "remote", "remove", remote_name], check=False, capture_output=True)
+        subprocess.run(["git", "remote", "add", remote_name, remote_with_token], check=True, capture_output=True)
+
+        # Stage file
+        subprocess.run(["git", "add", path], check=True, capture_output=True)
+
+        msg = commit_msg or f"Auto-save routes {os.path.basename(path)} @ {datetime.now().isoformat()}"
+        subprocess.run(["git", "commit", "-m", msg], check=True, capture_output=True)
+
+        # Push to the default branch (use HEAD)
+        subprocess.run(["git", "push", remote_name, "HEAD"], check=True, capture_output=True)
+
+        # Remove remote
+        subprocess.run(["git", "remote", "remove", remote_name], check=False, capture_output=True)
+
+        return True, "pushed"
+    except subprocess.CalledProcessError as cpe:
+        # capture stderr for debugging
+        err = cpe.stderr.decode() if hasattr(cpe, "stderr") and isinstance(cpe.stderr, (bytes, bytearray)) else str(cpe)
+        return False, f"git error: {err}"
+    except Exception as e:
+        return False, f"git exception: {e}"
+
+
+def save_routes(routes: List[Dict[str, Any]], commit_and_push: bool = False):
+    """
+    Save routes to JSON atomically.
+    If commit_and_push=True, tentera de commit & push en utilisant GIT_PUSH_TOKEN (ou GITHUB_TOKEN).
+    """
+    try:
+        b = json.dumps(routes, ensure_ascii=False, indent=2).encode("utf-8")
+        _atomic_write(ROUTES_FILE, b)
+    except Exception as e:
+        # if save fails, raise to surface error
+        raise
+
+    # Optionally commit & push (gracieux)
+    if commit_and_push:
+        ok, msg = _git_commit_and_push_if_enabled(ROUTES_FILE, commit_msg=None)
+        # we don't raise on push failure to avoid breaking the app; but write a small local log
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(f"{datetime.now().isoformat()} - save_routes commit_and_push: ok={ok} msg={msg}\n")
+        except Exception:
+            pass
+
+
+def load_email_config() -> dict:
+    try:
+        with open(EMAIL_CFG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
+
+
+def save_email_config(cfg: dict):
+    b = json.dumps(cfg, ensure_ascii=False, indent=2).encode("utf-8")
+    _atomic_write(EMAIL_CFG_FILE, b)
+
+
+def append_log(line: str):
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line.rstrip("\n") + "\n")
+    except Exception:
+        pass
+
+
+def count_updates_last_24h(route: dict) -> int:
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    cutoff = now - timedelta(hours=24)
+    cnt = 0
+    for h in route.get("history", []) or []:
+        d = h.get("date")
+        if not d:
+            continue
+        try:
+            if isinstance(d, (int, float)):
+                dt = datetime.fromtimestamp(d)
+            else:
+                dt = datetime.fromisoformat(str(d))
+            if dt >= cutoff:
+                cnt += 1
         except Exception:
             continue
-        if now - d < timedelta(days=1):
-            count += 1
-    return count
+    return cnt
 
-def ensure_route_fields(route):
-    defaults = {
-        "id": str(uuid.uuid4()),
-        "origin": "",
-        "destination": "",
-        "departure": None,
-        "departure_flex_days": 0,
-        "return": None,
-        "return_flex_days": 0,
-        "priority_stay": False,
-        "return_airport": None,
-        "stay_min": 1,
-        "stay_max": 1,
-        "target_price": 0.0,
-        "tracking_per_day": 1,
-        "notifications": False,
-        "email": "",
-        "cabin_class": "Economy",
-        "min_bags": 0,
-        "direct_only": False,
-        "max_stops": "any",
-        "avoid_airlines": [],
-        "preferred_airlines": [],
-        "history": [],
-        "last_tracked": None,
-        # stats will be a dict with numeric counters and a timestamp for daily reset
-        "stats": {}
-    }
-    for k, v in defaults.items():
-        if k not in route:
-            route[k] = v
 
-    # Ensure stats fields exist and have sane defaults
-    stats = route.setdefault("stats", {})
-    stats.setdefault("updates_total", 0)
-    stats.setdefault("updates_today", 0)
-    stats.setdefault("notifications_sent", 0)
-    stats.setdefault("today_reset_at", None)
+def ensure_route_fields(r: dict):
+    r.setdefault("id", "")
+    r.setdefault("origin", "")
+    r.setdefault("destination", "")
+    r.setdefault("departure", None)
+    r.setdefault("departure_flex_days", 0)
+    r.setdefault("return", None)
+    r.setdefault("return_flex_days", 0)
+    r.setdefault("return_airport", None)
+    r.setdefault("stay_min", 1)
+    r.setdefault("stay_max", 1)
+    r.setdefault("target_price", 100.0)
+    r.setdefault("tracking_per_day", 1)
+    r.setdefault("notifications", False)
+    r.setdefault("email", "")
+    r.setdefault("min_bags", 0)
+    r.setdefault("cabin_class", "Economy")
+    r.setdefault("direct_only", False)
+    r.setdefault("max_stops", "any")
+    r.setdefault("avoid_airlines", [])
+    r.setdefault("preferred_airlines", [])
+    r.setdefault("history", [])
+    r.setdefault("last_tracked", None)
+    r.setdefault("stats", {})
 
-def _maybe_reset_daily_counters(route):
-    """
-    Reset updates_today if last reset was more than 24h ago.
-    Stores ISO timestamp in stats['today_reset_at'].
-    """
-    stats = route.setdefault("stats", {})
-    reset_at = stats.get("today_reset_at")
-    if reset_at is None:
-        stats["today_reset_at"] = datetime.now().isoformat()
-        stats.setdefault("updates_today", 0)
-        return
+# optional helpers for sanitization if needed
+import numpy as np
+import pandas as pd
+from datetime import date, datetime
 
-    try:
-        reset_dt = datetime.fromisoformat(reset_at)
-    except Exception:
-        # corrupt timestamp -> reinit
-        stats["today_reset_at"] = datetime.now().isoformat()
-        stats["updates_today"] = 0
-        return
-
-    if datetime.now() - reset_dt >= timedelta(days=1):
-        stats["updates_today"] = 0
-        stats["today_reset_at"] = datetime.now().isoformat()
-
-def increment_route_stat(route, field, amount=1):
-    """
-    Increment a numeric stat for a route.
-    field: string, e.g. "updates_total", "updates_today", "notifications_sent"
-    amount: integer to add (default 1)
-    """
-    ensure_route_fields(route)
-    _maybe_reset_daily_counters(route)
-    stats = route.setdefault("stats", {})
-    # initialize unknown numeric fields to 0
-    if field not in stats or not isinstance(stats.get(field), int):
-        try:
-            stats[field] = int(stats.get(field, 0))
-        except Exception:
-            stats[field] = 0
-    try:
-        stats[field] = int(stats.get(field, 0)) + int(amount)
-    except Exception:
-        stats[field] = int(amount)
+def json_safe(v):
+    if v is None:
+        return None
+    if isinstance(v, np.generic):
+        return v.item()
+    if isinstance(v, float) and np.isnan(v):
+        return None
+    if v is pd.NA or v is pd.NaT:
+        return None
+    if isinstance(v, pd.Timestamp):
+        return v.isoformat()
+    if isinstance(v, (date, datetime)):
+        return v.isoformat()
+    return v
 
 def sanitize_dict(d):
-    # convert all values to serializable types
-    import copy
-    dd = copy.deepcopy(d)
-    for k,v in dd.items():
-        if isinstance(v, datetime):
-            dd[k] = v.isoformat()
-        elif isinstance(v, list):
-            dd[k] = [sanitize_dict(i) if isinstance(i, dict) else i for i in v]
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, list):
+            out[k] = [json_safe(x) for x in v]
         elif isinstance(v, dict):
-            dd[k] = sanitize_dict(v)
-    return dd
-    
+            out[k] = sanitize_dict(v)
+        else:
+            out[k] = json_safe(v)
+    return out
+        
