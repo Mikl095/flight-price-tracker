@@ -48,7 +48,10 @@ def count_updates_last_24h(route):
     now = datetime.now()
     count = 0
     for h in route.get("history", []):
-        d = datetime.fromisoformat(h["date"])
+        try:
+            d = datetime.fromisoformat(h["date"])
+        except Exception:
+            continue
         if now - d < timedelta(days=1):
             count += 1
     return count
@@ -78,11 +81,63 @@ def ensure_route_fields(route):
         "preferred_airlines": [],
         "history": [],
         "last_tracked": None,
+        # stats will be a dict with numeric counters and a timestamp for daily reset
         "stats": {}
     }
-    for k,v in defaults.items():
+    for k, v in defaults.items():
         if k not in route:
             route[k] = v
+
+    # Ensure stats fields exist and have sane defaults
+    stats = route.setdefault("stats", {})
+    stats.setdefault("updates_total", 0)
+    stats.setdefault("updates_today", 0)
+    stats.setdefault("notifications_sent", 0)
+    stats.setdefault("today_reset_at", None)
+
+def _maybe_reset_daily_counters(route):
+    """
+    Reset updates_today if last reset was more than 24h ago.
+    Stores ISO timestamp in stats['today_reset_at'].
+    """
+    stats = route.setdefault("stats", {})
+    reset_at = stats.get("today_reset_at")
+    if reset_at is None:
+        stats["today_reset_at"] = datetime.now().isoformat()
+        stats.setdefault("updates_today", 0)
+        return
+
+    try:
+        reset_dt = datetime.fromisoformat(reset_at)
+    except Exception:
+        # corrupt timestamp -> reinit
+        stats["today_reset_at"] = datetime.now().isoformat()
+        stats["updates_today"] = 0
+        return
+
+    if datetime.now() - reset_dt >= timedelta(days=1):
+        stats["updates_today"] = 0
+        stats["today_reset_at"] = datetime.now().isoformat()
+
+def increment_route_stat(route, field, amount=1):
+    """
+    Increment a numeric stat for a route.
+    field: string, e.g. "updates_total", "updates_today", "notifications_sent"
+    amount: integer to add (default 1)
+    """
+    ensure_route_fields(route)
+    _maybe_reset_daily_counters(route)
+    stats = route.setdefault("stats", {})
+    # initialize unknown numeric fields to 0
+    if field not in stats or not isinstance(stats.get(field), int):
+        try:
+            stats[field] = int(stats.get(field, 0))
+        except Exception:
+            stats[field] = 0
+    try:
+        stats[field] = int(stats.get(field, 0)) + int(amount)
+    except Exception:
+        stats[field] = int(amount)
 
 def sanitize_dict(d):
     # convert all values to serializable types
@@ -96,3 +151,4 @@ def sanitize_dict(d):
         elif isinstance(v, dict):
             dd[k] = sanitize_dict(v)
     return dd
+    
