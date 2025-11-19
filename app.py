@@ -1,4 +1,4 @@
-# app.py
+# app.py — PARTIE 1 (colle en premier)
 import streamlit as st
 from datetime import datetime, date, timedelta
 import uuid
@@ -12,6 +12,8 @@ from utils.storage import (
 from exporters import export_csv, export_pdf, export_xlsx
 from utils.plotting import plot_price_history
 from utils.email_utils import send_email
+import io
+import os
 
 # -----------------------------
 # INIT
@@ -21,9 +23,6 @@ routes = load_routes()
 email_cfg = load_email_config()
 global_notif_enabled = bool(email_cfg.get("enabled", False))
 
-# -----------------------------
-# TOP BAR
-# -----------------------------
 st.set_page_config(page_title="Flight Price Tracker", layout="wide")
 st.title("✈️ Flight Price Tracker — Multi-onglets")
 
@@ -35,8 +34,6 @@ col_top_left, col_top_mid, col_top_right = st.columns([1,2,1])
 with col_top_left:
     if st.button("Mettre à jour tous (simu)"):
         # simulate a single random price update for each route
-        from datetime import datetime
-        import random
         changed = False
         for r in routes:
             try:
@@ -47,16 +44,38 @@ with col_top_left:
             except Exception:
                 continue
         if changed:
-            save_routes(routes)
+            # save + attempt git commit & push (if enabled in env)
+            save_routes(routes, commit_and_push=True)
             append_log(f"{datetime.now().isoformat()} - Bulk update (simu)")
             st.success("Mise à jour globale simulée ✔")
             st.rerun()
 
+with col_top_right:
+    if st.button("Exporter CSV (tout)"):
+        try:
+            fname, data = export_csv(routes)  # exporters should return (filename, bytes)
+            st.download_button("Télécharger export CSV (tout)", data=data, file_name=fname)
+        except Exception as e:
+            st.error(f"Erreur export CSV global : {e}")
+
+    if st.button("Exporter XLSX (tout)"):
+        try:
+            fname, data = export_xlsx(routes)
+            st.download_button("Télécharger export XLSX (tout)", data=data, file_name=fname)
+        except Exception as e:
+            st.error(f"Erreur export XLSX global : {e}")
+
+    if st.button("Exporter PDF (tout)"):
+        try:
+            fname, data = export_pdf(routes)
+            st.download_button("Télécharger export PDF (tout)", data=data, file_name=fname)
+        except Exception as e:
+            st.error(f"Erreur export PDF global : {e}")
 
 # -----------------------------
 # SIDEBAR / NAV
 # -----------------------------
-tab = st.sidebar.radio("Navigation", ["Dashboard","Ajouter suivi","Recherche/Simulation","Configuration"])
+tab = st.sidebar.radio("Navigation", ["Dashboard","Ajouter suivi","Recherche/Simulation","Configuration","Exports"])
 
 # -----------------------------
 # DASHBOARD
@@ -96,7 +115,7 @@ if tab=="Dashboard":
         df = pd.DataFrame(df_rows)
         st.dataframe(df, use_container_width=True)
         st.markdown("---")
-
+            # app.py — PARTIE 2 (colle après PARTIE 1)
         # Details for each route
         for idx, r in enumerate(routes):
             ensure_route_fields(r)
@@ -118,27 +137,27 @@ if tab=="Dashboard":
                     price = random.randint(120, 1000)
                     r.setdefault("history", []).append({"date": datetime.now().isoformat(), "price": price})
                     r["last_tracked"] = datetime.now().isoformat()
-                    save_routes(routes)
+                    save_routes(routes, commit_and_push=True)
                     append_log(f"{datetime.now().isoformat()} - Manual update {r['id']} price={price}")
                     st.rerun()
             with cols[2]:
                 if r.get("notifications"):
                     if st.button("Désactiver notif", key=f"dash_notif_off_{idx}"):
                         r["notifications"] = False
-                        save_routes(routes)
+                        save_routes(routes, commit_and_push=True)
                         append_log(f"{datetime.now().isoformat()} - Notifications OFF {r['id']}")
                         st.rerun()
                 else:
                     if st.button("Activer notif", key=f"dash_notif_on_{idx}"):
                         r["notifications"] = True
-                        save_routes(routes)
+                        save_routes(routes, commit_and_push=True)
                         append_log(f"{datetime.now().isoformat()} - Notifications ON {r['id']}")
                         st.rerun()
             with cols[3]:
                 if st.button("Supprimer", key=f"dash_del_{idx}"):
                     append_log(f"{datetime.now().isoformat()} - Delete route {r['id']}")
                     routes.pop(idx)
-                    save_routes(routes)
+                    save_routes(routes, commit_and_push=True)
                     st.rerun()
 
             a1, a2, a3 = st.columns([1,1,1])
@@ -169,8 +188,13 @@ if tab=="Dashboard":
                 with st.form(key=f"dash_form_{r['id']}"):
                     origin_e = st.text_input("Origine (IATA)", value=r.get("origin",""))
                     dest_e = st.text_input("Destination (IATA)", value=r.get("destination",""))
-                    departure_e = st.date_input("Date départ", value=datetime.fromisoformat(r.get("departure")) if r.get("departure") else date.today())
-                    return_e = st.date_input("Date retour", value=datetime.fromisoformat(r.get("return")) if r.get("return") else None)
+                    departure_e = st.date_input("Date départ", value=(datetime.fromisoformat(r.get("departure")).date() if r.get("departure") else date.today()))
+                    # allow return optional: use value=None if missing
+                    try:
+                        return_default = (datetime.fromisoformat(r.get("return")).date() if r.get("return") else None)
+                    except Exception:
+                        return_default = None
+                    return_e = st.date_input("Date retour (optionnelle)", value=return_default)
                     stay_min_e = st.number_input("Séjour min (jours)", min_value=1, max_value=365, value=r.get("stay_min",1))
                     stay_max_e = st.number_input("Séjour max (jours)", min_value=1, max_value=365, value=r.get("stay_max",1))
                     target_e = st.number_input("Seuil alerte (€)", min_value=1.0, value=r.get("target_price",100.0))
@@ -205,7 +229,7 @@ if tab=="Dashboard":
                         "preferred_airlines": [x.strip().upper() for x in pref_e.split(",") if x.strip()],
                         "return_airport": return_airport_e.upper().strip() if return_airport_e else None
                     })
-                    save_routes(routes)
+                    save_routes(routes, commit_and_push=True)
                     append_log(f"{datetime.now().isoformat()} - Edited route {r['id']}")
                     st.success("Modifications enregistrées.")
                     st.rerun()
@@ -238,6 +262,7 @@ elif tab=="Ajouter suivi":
         route_email = st.text_input("Email pour ce suivi (vide = email global)", value="")
         add_submit = st.form_submit_button("Ajouter ce suivi")
     if add_submit:
+        created = 0
         for origin in [o.strip().upper() for o in origins.split(",") if o.strip()]:
             for dest in [d.strip().upper() for d in destinations.split(",") if d.strip()]:
                 new = {
@@ -268,8 +293,10 @@ elif tab=="Ajouter suivi":
                 }
                 routes.append(new)
                 append_log(f"{datetime.now().isoformat()} - Added route {new['id']}")
-        save_routes(routes)
-        st.success("Suivi(s) ajouté(s) ✔")
+                created += 1
+        # save and attempt git push
+        save_routes(routes, commit_and_push=True)
+        st.success(f"{created} Suivi(s) ajouté(s) ✔")
         st.rerun()
 
 # -----------------------------
@@ -351,7 +378,8 @@ elif tab=="Recherche/Simulation":
                             routes.append(sanitize_dict(new))
                             append_log(f"{datetime.now().isoformat()} - Added from search {new['id']}")
                             created += 1
-                    save_routes(routes)
+                    # save changes and attempt git push
+                    save_routes(routes, commit_and_push=True)
                     st.success(f"{created} suivi(s) ajouté(s) ✔")
                 except Exception as e:
                     st.error(f"Erreur dans la saisie des indices : {e}")
@@ -376,111 +404,66 @@ elif tab=="Configuration":
         cfg["api_user"] = api_user.strip()
         cfg["api_pass"] = api_pass.strip()
         save_email_config(cfg)
-        global_notif_enabled = bool(cfg.get("enabled", False))
         st.success("Configuration enregistrée ✔")
-        st.rerun()  # optionnel mais pratique pour recharger l'état
 
-# -----------------------------
-# SIDEBAR — Export (tolérant: path ou buffer)
-# -----------------------------
-import io
-
-st.sidebar.header("⬇️ Export")
-export_choice = st.sidebar.selectbox("Format d'export", ["CSV","XLSX","PDF"])
-
-# helper util to handle different exporter return types (updated)
-import io
-import os
-
-def _handle_export_result(res, default_fname):
-    """
-    Accept:
-      - res: tuple (bytes, filename) OR path string OR bytes OR BytesIO
-      - default_fname: fallback filename
-    Returns (data_bytes, filename) or (None, filename) if cannot extract.
-    """
-    # case: (bytes, filename)
-    if isinstance(res, tuple) and len(res) == 2:
-        data, name = res
-        if isinstance(data, (bytes, bytearray)):
-            return bytes(data), name or default_fname
-        if isinstance(data, io.BytesIO):
-            return data.getvalue(), name or default_fname
-        # if data is str (path) inside tuple, try to read
-        if isinstance(data, str) and os.path.exists(data):
-            with open(data, "rb") as f:
-                return f.read(), name or os.path.basename(data)
-        return None, name or default_fname
-
-    # case: path string
-    if isinstance(res, str):
+    st.markdown("---")
+    st.subheader("🔧 Push Git (optionnel)")
+    st.write("Si tu veux forcer un push vers GitHub maintenant, utilise le bouton ci-dessous. Nécessite GIT_PUSH=true et GIT_PUSH_TOKEN configurés.")
+    if st.button("Push routes.json vers GitHub maintenant"):
+        ok, msg = False, "not attempted"
         try:
-            with open(res, "rb") as f:
-                return f.read(), os.path.basename(res)
-        except Exception:
-            return None, default_fname
+            # call save_routes with commit flag to attempt push
+            save_routes(routes, commit_and_push=True)
+            ok, msg = True, "attempted"
+        except Exception as e:
+            ok, msg = False, str(e)
+        if ok:
+            st.success("Tentative de push initiée — voir logs dans repository (ou GitHub Actions).")
+        else:
+            st.error(f"Push non effectué : {msg}")
 
-    # case: bytes / bytearray
-    if isinstance(res, (bytes, bytearray)):
-        return bytes(res), default_fname
+# -----------------------------
+# EXPORTS (page)
+# -----------------------------
+elif tab == "Exports":
+    st.header("📤 Exports")
+    st.write("Exporter tous les suivis ou un suivi individuel (CSV / XLSX / PDF).")
 
-    # case: BytesIO-like
-    if isinstance(res, io.BytesIO):
-        return res.getvalue(), default_fname
-
-    return None, default_fname
-
-
-# EXPORT - bouton global
-st.sidebar.subheader("Exporter TOUS les suivis")
-if st.sidebar.button("Exporter tout"):
     if not routes:
-        st.sidebar.warning("Aucun suivi à exporter.")
+        st.info("Aucun suivi à exporter.")
     else:
-        # call exporter and accept either path or buffer return
-        try:
-            fname = f"export_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_choice.lower()}"
-            if export_choice == "CSV":
-                res = export_csv(routes, fname)  # may return path or buffer or None
-            elif export_choice == "XLSX":
-                res = export_xlsx(routes, fname)
-            else:
-                res = export_pdf(routes, fname)
+        export_choice = st.selectbox("Format d'export", ["CSV","XLSX","PDF"])
+        st.markdown("**Exporter un suivi individuel**")
+        idx_sel = st.number_input("Index du suivi", min_value=0, max_value=len(routes)-1, value=0)
+        if st.button("Exporter suivi sélectionné"):
+            try:
+                route_to_export = [routes[int(idx_sel)]]
+                if export_choice == "CSV":
+                    fname, data = export_csv(route_to_export)
+                elif export_choice == "XLSX":
+                    fname, data = export_xlsx(route_to_export)
+                else:
+                    fname, data = export_pdf(route_to_export)
+                st.download_button("Télécharger", data=data, file_name=fname)
+            except Exception as e:
+                st.error(f"Erreur export suivi {idx_sel} : {e}")
 
-            data, actual_name = _handle_export_result(res, fname)
-            if data is None:
-                st.sidebar.error("L'export a été généré mais impossible de récupérer le contenu (vérifie le dossier).")
-            else:
-                st.sidebar.success(f"Export global prêt : {actual_name}")
-                st.sidebar.download_button("Télécharger l'export", data=data, file_name=actual_name)
-        except Exception as e:
-            st.sidebar.error(f"Erreur lors de l'export global : {e}")
+        st.markdown("---")
+        st.markdown("**Exporter tous les suivis**")
+        if st.button("Exporter tout"):
+            try:
+                if export_choice == "CSV":
+                    fname, data = export_csv(routes)
+                elif export_choice == "XLSX":
+                    fname, data = export_xlsx(routes)
+                else:
+                    fname, data = export_pdf(routes)
+                st.download_button("Télécharger export (tout)", data=data, file_name=fname)
+            except Exception as e:
+                st.error(f"Erreur export global : {e}")
 
-st.sidebar.markdown("---")
-
-# EXPORT - par index (suivi individuel)
-st.sidebar.subheader("Exporter un suivi (index)")
-if routes:
-    max_idx = len(routes) - 1
-    idx_sel = st.sidebar.number_input("Index du suivi à exporter", min_value=0, max_value=max_idx, value=0)
-    if st.sidebar.button("Exporter suivi sélectionné"):
-        try:
-            route_to_export = [routes[int(idx_sel)]]
-            fname = f"export_{route_to_export[0]['id'][:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_choice.lower()}"
-            if export_choice == "CSV":
-                res = export_csv(route_to_export, fname)
-            elif export_choice == "XLSX":
-                res = export_xlsx(route_to_export, fname)
-            else:
-                res = export_pdf(route_to_export, fname)
-
-            data, actual_name = _handle_export_result(res, fname)
-            if data is None:
-                st.sidebar.error("L'export a été généré mais impossible de récupérer le contenu (vérifie le dossier).")
-            else:
-                st.sidebar.success(f"Export du suivi {idx_sel} prêt : {actual_name}")
-                st.sidebar.download_button("Télécharger le suivi", data=data, file_name=actual_name)
-        except Exception as e:
-            st.sidebar.error(f"Erreur export suivi {idx_sel} : {e}")
-else:
-    st.sidebar.info("Aucun suivi disponible.")
+# -----------------------------
+# END
+# -----------------------------
+st.markdown("---")
+st.markdown("<p style='text-align:center; color:#888;'>Flight Tracker — ©</p>", unsafe_allow_html=True)
