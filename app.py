@@ -407,20 +407,70 @@ elif tab=="Configuration":
         st.success("Configuration enregistrée ✔")
 
     st.markdown("---")
+
+    # ---------- Push Git manuel ----------
     st.subheader("🔧 Push Git (optionnel)")
     st.write("Si tu veux forcer un push vers GitHub maintenant, utilise le bouton ci-dessous. Nécessite GIT_PUSH=true et GIT_PUSH_TOKEN configurés.")
     if st.button("Push routes.json vers GitHub maintenant"):
-        ok, msg = False, "not attempted"
         try:
-            # call save_routes with commit flag to attempt push
             save_routes(routes, commit_and_push=True)
-            ok, msg = True, "attempted"
+            st.success("Tentative de push initiée — voir le statut ci-dessous.")
         except Exception as e:
-            ok, msg = False, str(e)
-        if ok:
-            st.success("Tentative de push initiée — voir logs dans repository (ou GitHub Actions).")
+            st.error(f"Push non effectué : {e}")
+
+    # ---------- Log du dernier push (lecture from last_updates.log) ----------
+    st.markdown("**État du dernier push**")
+    def _read_last_push_status(log_path="last_updates.log", lookback_lines=200):
+        """
+        Lis le fichier de log (last_updates.log) et retourne la dernière ligne
+        contenant 'save_routes commit_and_push'. Retourne (found:bool, text:str).
+        """
+        try:
+            if not os.path.exists(log_path):
+                return False, "Aucun fichier de log trouvé."
+            # lire les dernières lines du fichier
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.read().splitlines()
+            # parcourir en sens inverse pour trouver la dernière entrée pertinente
+            for ln in reversed(lines[-lookback_lines:]):
+                if "save_routes commit_and_push" in ln or "git error" in ln or "pushed" in ln:
+                    return True, ln
+            # fallback: chercher une ligne qui ressemble à un log de push
+            for ln in reversed(lines[-lookback_lines:]):
+                if "git" in ln or "push" in ln:
+                    return True, ln
+            return False, "Aucune tentative de push trouvée dans les logs."
+        except Exception as e:
+            return False, f"Erreur lecture log: {e}"
+
+    found, last_push_line = _read_last_push_status()
+    if found:
+        # essayer de colorer selon ok/erreur
+        if "ok=True" in last_push_line or "pushed" in last_push_line.lower():
+            st.success(f"Dernière tentative de push : {last_push_line}")
         else:
-            st.error(f"Push non effectué : {msg}")
+            st.error(f"Dernière tentative de push : {last_push_line}")
+    else:
+        st.info(last_push_line)
+
+    # ---------- Afficher les derniers logs (expander) ----------
+    st.markdown("---")
+    st.subheader("📝 Derniers logs")
+    log_path = "last_updates.log"
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                log_lines = f.read().splitlines()
+            # montre les 200 dernières lignes (ou moins)
+            N = 200
+            tail = "\n".join(log_lines[-N:])
+            with st.expander("Afficher les derniers logs (dérouler)"):
+                st.code(tail, language="text")
+        except Exception as e:
+            st.error(f"Impossible de lire les logs : {e}")
+    else:
+        st.info("Aucun log enregistré pour le moment.")
+
 
 # -----------------------------
 # EXPORTS (page)
