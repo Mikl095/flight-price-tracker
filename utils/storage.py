@@ -216,6 +216,29 @@ def ensure_route_fields(r: dict):
     r.setdefault("last_tracked", None)
     r.setdefault("stats", {})
 
+def increment_route_stat(r: dict, key: str, amount: int = 1):
+    """
+    Increment a numeric stat inside route['stats'] safely.
+    - r: the route dict (will ensure 'stats' exists)
+    - key: stat name, ex: "updates_total", "updates_today", "notifications_sent"
+    - amount: integer increment (can be negative to decrement)
+    """
+    try:
+        if r is None:
+            return
+        stats = r.setdefault("stats", {})
+        # If the value is missing or non-int, try to coerce to int safely
+        cur = stats.get(key, 0)
+        try:
+            cur_val = int(cur)
+        except Exception:
+            cur_val = 0
+        stats[key] = cur_val + int(amount)
+    except Exception:
+        # Never raise: stats increment is best-effort
+        pass
+    
+
 # optional helpers for sanitization if needed
 import numpy as np
 import pandas as pd
