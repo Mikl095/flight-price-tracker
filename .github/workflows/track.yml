@@ -5,6 +5,9 @@ on:
     - cron: "0 */10 * * *"  # every 10 hours
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   track:
     runs-on: ubuntu-latest
@@ -12,7 +15,10 @@ jobs:
       SENDGRID_KEY: ${{ secrets.SENDGRID_KEY }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -24,19 +30,25 @@ jobs:
 
       - name: Run tracker
         env:
-          GIT_PUSH_TOKEN: ${{ secrets.GIT_PUSH_TOKEN }}
+          GIT_PUSH_TOKEN: ${{ secrets.GIT_PUSH_TOKEN }}    # ton PAT stocké en Secret
           GIT_PUSH: 'true'
           GITHUB_REPOSITORY: ${{ github.repository }}
           SENDGRID_KEY: ${{ secrets.SENDGRID_KEY }}
         run: python track.py
-  
-        
-      - name: Commit data changes
-        run: |
-          git config user.email "github-actions@github.com"
-          git config user.name "GitHub Actions"
-          git add routes.json || true
-          git commit -m "Auto update prices" || echo "No changes"
-          git push || echo "No permission to push"
 
-  
+      # Optional alternative: let the workflow handle the commit & push (use ONE method only)
+      # - name: Commit data changes (ALTERNATIVE PUSH METHOD)
+      #   if: always()
+      #   env:
+      #     GIT_PUSH_TOKEN: ${{ secrets.GIT_PUSH_TOKEN }}
+      #   run: |
+      #     git config user.email "github-actions@github.com"
+      #     git config user.name "GitHub Actions"
+      #     git add routes.json || true
+      #     git commit -m "Auto update prices" || echo "No changes"
+      #     if [ -n "${GIT_PUSH_TOKEN}" ]; then
+      #       remote_url="https://${GIT_PUSH_TOKEN}@github.com/${{ github.repository }}.git"
+      #       git push "$remote_url" HEAD || echo "No permission to push"
+      #     else
+      #       git push || echo "No permission to push"
+      #     fi
