@@ -2,7 +2,7 @@ import random
 from datetime import datetime
 from utils.storage import (
     load_routes, save_routes, load_email_config, append_log, 
-    count_updates_last_24h, ensure_route_fields
+    count_updates_last_24h, ensure_route_fields, increment_route_stat
 )
 from utils.email_utils import send_email
 
