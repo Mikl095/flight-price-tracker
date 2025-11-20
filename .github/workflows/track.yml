@@ -26,7 +26,7 @@ jobs:
         env:
           SENDGRID_KEY: ${{ secrets.SENDGRID_KEY }}
         run: python track.py
-
+        
       - name: Commit data changes
         run: |
           git config user.email "github-actions@github.com"
