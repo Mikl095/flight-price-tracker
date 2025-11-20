@@ -35,9 +35,11 @@ jobs:
           git commit -m "Auto update prices" || echo "No changes"
           git push || echo "No permission to push"
 
-      - name: Run tracker script
-        env:
-          GIT_PUSH_TOKEN: ${{ secrets.GIT_PUSH_TOKEN }}
-          GIT_PUSH: 'true'
-        run: python track.py
+- name: Run tracker script
+  env:
+    GIT_PUSH_TOKEN: ${{ secrets.GIT_PUSH_TOKEN }}
+    GIT_PUSH: 'true'
+    GITHUB_REPOSITORY: ${{ github.repository }}
+  run: python track.py
+  
         
