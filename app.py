@@ -484,7 +484,7 @@ st.write("GITHUB_REPOSITORY:", os.environ.get("GITHUB_REPOSITORY"))
 # -----------------------------
 # EXPORTS (page)
 # -----------------------------
-elif tab == "Exports":
+elif tab=="Exports":
     st.header("📤 Exports")
     st.write("Exporter tous les suivis ou un suivi individuel (CSV / XLSX / PDF).")
 
