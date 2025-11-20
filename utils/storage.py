@@ -145,6 +145,118 @@ def save_routes(routes: List[Dict[str, Any]], commit_and_push: bool = False):
         except Exception:
             pass
 
+import subprocess
+import shlex
+import json
+import time
+
+def _git_commit_and_push_if_enabled(path: str = ROUTES_FILE, commit_msg: str = None):
+    """
+    Attempt to commit the given file and push using GIT_PUSH_TOKEN if env enabled.
+    Writes a single-line log to LOG_FILE describing result.
+    Returns dict {"ok": bool, "msg": str, "detail": str}
+    """
+    try:
+        git_push_flag = os.environ.get("GIT_PUSH", "").lower() in ("1", "true", "yes")
+        token = os.environ.get("GIT_PUSH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        repo = os.environ.get("GITHUB_REPOSITORY")  # owner/repo
+        timestamp = datetime.now().isoformat()
+
+        if not git_push_flag or not token:
+            msg = "git push not enabled or no token"
+            append_log(f"{timestamp} - save_routes commit_and_push: ok=False msg={msg}")
+            return {"ok": False, "msg": msg, "detail": None}
+
+        # try to discover remote repo if not provided
+        if not repo:
+            try:
+                # try git remote get-url origin
+                p = subprocess.run(shlex.split("git remote get-url origin"), capture_output=True, text=True, check=True)
+                url = p.stdout.strip()
+                # derive owner/repo from url
+                if url.startswith("git@"):
+                    # git@github.com:owner/repo.git
+                    repo = url.split(":", 1)[1].rstrip(".git")
+                else:
+                    # https://github.com/owner/repo.git
+                    repo = url.rstrip(".git").split("/")[-2] + "/" + url.rstrip(".git").split("/")[-1]
+            except Exception:
+                repo = None
+
+        if not repo:
+            msg = "could not determine repository (set GITHUB_REPOSITORY env)"
+            append_log(f"{timestamp} - save_routes commit_and_push: ok=False msg={msg}")
+            return {"ok": False, "msg": msg, "detail": None}
+
+        # Make sure we are in a git repo
+        try:
+            subprocess.run(shlex.split("git status --porcelain"), capture_output=True, text=True, check=True)
+        except Exception as e:
+            # not a git repo or git not available
+            msg = f"git not available or not a repo: {e}"
+            append_log(f"{timestamp} - save_routes commit_and_push: ok=False msg={msg}")
+            return {"ok": False, "msg": msg, "detail": None}
+
+        # Stage the file
+        try:
+            subprocess.run(["git", "add", path], check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            detail = e.stderr or e.stdout or str(e)
+            msg = "git add failed"
+            append_log(f"{timestamp} - save_routes commit_and_push: ok=False msg={msg} detail={detail}")
+            return {"ok": False, "msg": msg, "detail": detail}
+
+        # Commit if there are staged changes
+        if not commit_msg:
+            commit_msg = f"Auto update {os.path.basename(path)} via app at {datetime.now().isoformat()}"
+        try:
+            # commit may fail if no changes to commit
+            subprocess.run(["git", "commit", "-m", commit_msg], check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            # if no changes to commit, treat as ok (nothing to push)
+            out = (e.stdout or "") + (e.stderr or "")
+            if "nothing to commit" in out.lower():
+                append_log(f"{timestamp} - save_routes commit_and_push: ok=True msg=no_changes")
+                return {"ok": True, "msg": "no_changes", "detail": out}
+            # otherwise return error
+            detail = out or str(e)
+            append_log(f"{timestamp} - save_routes commit_and_push: ok=False msg=git commit failed detail={detail}")
+            return {"ok": False, "msg": "git commit failed", "detail": detail}
+
+        # Create a temporary remote with token embedded
+        owner_repo = repo  # expected owner/repo
+        remote_name = f"autopush-{int(time.time())}"
+        # compose remote url: https://<token>@github.com/owner/repo.git
+        remote_url = f"https://{token}@github.com/{owner_repo}.git"
+        try:
+            subprocess.run(["git", "remote", "add", remote_name, remote_url], check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            detail = e.stderr or e.stdout or str(e)
+            append_log(f"{timestamp} - save_routes commit_and_push: ok=False msg=git remote add failed detail={detail}")
+            return {"ok": False, "msg": "git remote add failed", "detail": detail}
+
+        # Push
+        try:
+            p = subprocess.run(["git", "push", remote_name, "HEAD"], check=True, capture_output=True, text=True)
+            detail = p.stdout or p.stderr or ""
+            append_log(f"{timestamp} - save_routes commit_and_push: ok=True msg=pushed detail={detail}")
+            return {"ok": True, "msg": "pushed", "detail": detail}
+        except subprocess.CalledProcessError as e:
+            detail = e.stderr or e.stdout or str(e)
+            append_log(f"{timestamp} - save_routes commit_and_push: ok=False msg=git push failed detail={detail}")
+            return {"ok": False, "msg": "git push failed", "detail": detail}
+        finally:
+            # clean up remote (best-effort)
+            try:
+                subprocess.run(["git", "remote", "remove", remote_name], capture_output=True, text=True)
+            except Exception:
+                pass
+
+    except Exception as e:
+        timestamp = datetime.now().isoformat()
+        append_log(f"{timestamp} - save_routes commit_and_push: ok=False msg=exception detail={str(e)}")
+        return {"ok": False, "msg": "exception", "detail": str(e)}
+        
 
 def load_email_config() -> dict:
     try:
