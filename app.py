@@ -472,6 +472,15 @@ elif tab=="Configuration":
         st.info("Aucun log enregistré pour le moment.")
 
 
+
+import os
+st.markdown("**DEBUG env (présence seulement)**")
+st.write("GIT_PUSH:", os.environ.get("GIT_PUSH"))
+st.write("GIT_PUSH_TOKEN present:", bool(os.environ.get("GIT_PUSH_TOKEN")))
+st.write("GITHUB_REPOSITORY:", os.environ.get("GITHUB_REPOSITORY"))
+
+
+
 # -----------------------------
 # EXPORTS (page)
 # -----------------------------
