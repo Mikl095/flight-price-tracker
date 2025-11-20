@@ -37,18 +37,18 @@ jobs:
         run: python track.py
 
       # Optional alternative: let the workflow handle the commit & push (use ONE method only)
-      # - name: Commit data changes (ALTERNATIVE PUSH METHOD)
-      #   if: always()
-      #   env:
-      #     GIT_PUSH_TOKEN: ${{ secrets.GIT_PUSH_TOKEN }}
-      #   run: |
-      #     git config user.email "github-actions@github.com"
-      #     git config user.name "GitHub Actions"
-      #     git add routes.json || true
-      #     git commit -m "Auto update prices" || echo "No changes"
-      #     if [ -n "${GIT_PUSH_TOKEN}" ]; then
-      #       remote_url="https://${GIT_PUSH_TOKEN}@github.com/${{ github.repository }}.git"
-      #       git push "$remote_url" HEAD || echo "No permission to push"
-      #     else
-      #       git push || echo "No permission to push"
-      #     fi
+       - name: Commit data changes (ALTERNATIVE PUSH METHOD)
+         if: always()
+         env:
+           GIT_PUSH_TOKEN: ${{ secrets.GIT_PUSH_TOKEN }}
+         run: |
+           git config user.email "github-actions@github.com"
+           git config user.name "GitHub Actions"
+           git add routes.json || true
+           git commit -m "Auto update prices" || echo "No changes"
+           if [ -n "${GIT_PUSH_TOKEN}" ]; then
+             remote_url="https://${GIT_PUSH_TOKEN}@github.com/${{ github.repository }}.git"
+             git push "$remote_url" HEAD || echo "No permission to push"
+           else
+             git push || echo "No permission to push"
+      #     fin
